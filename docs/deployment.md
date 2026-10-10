@@ -49,11 +49,22 @@ requires hosted-route preflight before the deployment job can run. The REST clie
 the reviewed Git commit and waits for Vercel READY; queued or failed builds are not
 reported as successful. No deployment dependencies or CLI packages are installed.
 
-Preflight deliberately fails until a reviewed `api/attendees.py` and its website connection
-exist. The current `web/app.js` uses the local organizer API, which must not be published
-as an unauthenticated hosted API. Vercel cannot provide persistence for the local SQLite
-file: its function filesystem is read-only apart from temporary scratch space.
+The current source includes `api/attendees.py` and a separate read-only hosted page at
+`web/index.html`. Preflight verifies that the page calls only `/api/attendees`, and that
+`.vercelignore` excludes `web/organizer.html` and `web/app.js`. The local organizer API
+remains loopback-only and is not part of the Vercel output. Vercel cannot provide
+persistence for the local SQLite file: its function filesystem is read-only apart from
+temporary scratch space.
 [Vercel SQLite guidance](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel)
+
+The route uses Vercel's Python function handler format and the standard library; that
+runtime is currently documented as beta. The runtime and cache behavior have not been
+verified in a live Vercel project. Vercel removes `.vercelignore` matches before
+deployment, so the preflight verifies the hosted page and the exclusion rules without
+requiring the ignored organizer files to remain in the Vercel build. See [Vercel Python
+functions](https://vercel.com/docs/functions/runtimes/python), [Vercel cache-control
+headers](https://vercel.com/docs/caching/cache-control-headers), and [`.vercelignore`
+documentation](https://vercel.com/docs/deployments/vercel-ignore).
 
 The only Vercel deployment found is for the initial README-only commit, not the current
 Courtside application. The private staging promotion's deployment workflow failed at
@@ -62,17 +73,22 @@ or verified Vercel project connection exists.
 
 Before enabling deployment:
 
-1. Implement/review the no-database Reclub website feed described below and its tests.
+1. Review the no-database Reclub feed and its tests below. Select the owner's actual
+   public event and confirm that its attendee names and approved avatar URLs may be
+   republished on a public website. The compatibility sample is not the production event.
 2. Connect the public release repository to a Vercel project, with project root at this repo and
    production branch `main`. Keep automatic deployments disabled in the committed config.
 3. In each protected GitHub environment, store `VERCEL_TOKEN` as a secret; set
    `VERCEL_PROJECT_ID` and optional `VERCEL_TEAM_ID` as variables. Use a token scoped
    to the intended Vercel account/project access. Never put it in source or chat.
-4. Confirm source privacy, displayed fields, build/runtime behavior, staging protection,
-   and a live staging smoke test; then set `VERCEL_WEBSITE_READY=true` in that environment.
-5. Approve promotion to staging; inspect its deployment and interactions before approving
-   staging → main and the production deployment. Production release remains blocked
-   until these prerequisites are complete.
+4. Set `RECLUB_EVENT_REF` in the Vercel Preview and Production environments to the
+   selected public event's reference. It is a public event identifier, not an API token.
+   Confirm source privacy, displayed fields, build/runtime behavior, and staging protection.
+   Then set `VERCEL_WEBSITE_READY=true` in the protected GitHub staging environment to
+   allow the first staging deployment.
+5. Approve the staging deployment and run its live smoke test. After it passes, set
+   `VERCEL_WEBSITE_READY=true` in the protected GitHub production environment. Approve
+   staging → main and the production deployment separately.
 
 Use Vercel's previous production deployment for a hosting rollback, then restore the
 source through a reviewed revert PR. Do not force-push a protected branch or delete a
@@ -101,42 +117,54 @@ Observed direct endpoint: [sample event API](https://api.reclub.co/meets/by-ref/
 Official integration questions can go through [Reclub support](https://help.reclub.co/hc/reclub-help/articles/1765846581-how-do-i-report-an-issue-to-reclub).
 No message was sent to Reclub.
 
-## Proposed no-database attendee website
+## Read-only attendee website implementation and review
 
-The website currently has a local same-browser session-link landing flow. **Generate Link**
-creates a local `Open Play` session, stores a random UUID-to-session mapping in browser
+The local organizer interface has a same-browser session-link landing flow. **Generate
+Link** creates a local `Open Play` session, stores a random UUID-to-session mapping in browser
 `localStorage`, and puts the token in the URL fragment. The token is intentionally usable
 only in that browser profile on that origin. It is not authentication, a secret access
 control, cross-device sharing, or a hosted session record. Clearing browser storage loses
 the mapping; local SQLite records persist on the organizer's computer. Do not expose the
 local mutation API as a public service.
 
-The user wants the website to reflect Reclub sign-ups without CSV or a duplicate member
-database. A small Vercel serverless adapter can fetch one organizer-selected public event
-by reference, then profiles in bounded batches. The browser reads only the website's
-same-origin attendee endpoint. There is no Reclub write-back, organizer credential in
-browser code, or stored roster. Short-lived memory caching/backoff can reduce upstream
-load; they are caches, not a master user database. This adapter is **not yet implemented**.
+The hosted website reflects one Reclub event without CSV or a duplicate member database.
+`RECLUB_EVENT_REF` selects the event at deploy configuration; requests cannot select an
+event or provide an upstream URL, and the HTTP client rejects upstream redirects. The
+Python route fetches the event and account profiles in bounded batches. The browser reads
+only the same-origin attendee endpoint. The route has no SQLite access, write method,
+Reclub credential, or stored roster. Vercel CDN
+caching is short-lived response caching, not a master user database. The code is
+implemented, but no event is configured and no live deployment or privacy approval has
+been completed.
 
 - Select the owner's actual public event/club; the supplied Vietnam event is a compatibility
   sample, not a default production club. Do not expose an arbitrary upstream URL proxy.
-- Output only an approved event title, sign-up status, participant-slot identifier, display
-  name, and validated HTTPS avatar URL. Do not return raw event/profile responses, which
-  contain unrelated fields including an access-token field.
+- Output only an event title, status 1, participant-slot ID, display name, and a validated
+  HTTPS avatar URL from `assets.reclub.co` or `d1upr18ac2olqz.cloudfront.net`. Invalid,
+  credential-bearing, query-string, or non-HTTPS image URLs are omitted. The response
+  also includes a fetch timestamp and static warnings. Do not return raw event/profile
+  responses, which contain unrelated fields including an access-token field.
 - Preserve slot identity. A guest sharing the inviter's referenceId is a distinct slot;
   deduplicating solely by userId loses guests or displays the inviter twice. Use a neutral
-  guest label when no name is supplied; do not fabricate a profile.
+  guest label when no name is supplied; do not fabricate a profile. When an upstream slot
+  ID is missing, return a derived opaque identifier rather than a user ID.
 - Handle `externalReference: null`, missing names/profiles, cancellations, unsupported
   types/statuses, empty events, upstream changes, and partial responses explicitly.
-- Use bounded requests, timeouts, profile batches, refresh limits, and 429 backoff. Show
-  an upstream failure/stale warning; do not convert a fetch failure into zero attendees.
-- Unix timestamps represent an instant independent of timezone. Build day boundaries
-  using the club's actual timezone; do not apply the example's UTC+7 to a Manila club.
+- Bound event responses to 2 MB, raw event slots to 1,000, displayed sign-ups to 200,
+  profile batches to 50, and each HTTP attempt to five seconds. Retry an upstream 429
+  at most once per request, with a maximum one-second wait. The function has a 45-second
+  runtime budget for the bounded five-request worst case. The browser refresh button has a
+  60-second cooldown; successful responses use a 60-second CDN cache with stale-while-
+  revalidate and stale-if-error windows. A fetch timestamp lets the page identify old
+  cached data. An in-page failure keeps the last successful list with a warning; an
+  initial failure shows no attendee count. A valid empty response is shown as zero.
+  The CDN cache reduces upstream requests but is not a strict per-client rate limit.
 - One event of up to 50 own-account profiles ordinarily needs an event request and one
-  batch-profile request. Event discovery and additional batches add requests. The pasted
-  0.5-second estimate is not a service guarantee.
-- Reject the old Nuxt HTML parser. Fix the pasted full-URL/base-URL duplication, list
-  `.get()` call, nullable `.get()` call, and type-2 inviter/profile confusion.
+  batch-profile request. Additional profiles use more batches, up to 200 displayed
+  sign-ups. Event discovery is not implemented. The pasted 0.5-second estimate is not a
+  service guarantee.
+- The implementation uses fixed JSON API paths and does not use the pasted Nuxt HTML
+  parser or caller-supplied upstream URLs.
 
 Actual physical attendance, mutable court queues, and historical ratings remain separate
 features. They cannot be inferred from public sign-ups. Their future persistence/access

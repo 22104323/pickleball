@@ -29,10 +29,21 @@ class DeploymentTests(unittest.TestCase):
             (root / 'api').mkdir()
             (root / 'api' / 'attendees.py').write_text('# synthetic structural fixture')
             (root / 'web').mkdir()
-            (root / 'web' / 'app.js').write_text('fetch("/api/sessions")')
+            (root / 'web' / 'organizer.html').write_text('<script src="/app.js"></script>')
+            (root / 'web' / 'index.html').write_text('<script src="/app.js"></script>')
+            (root / 'web' / 'attendees.js').write_text("fetch('/api/sessions')")
+            (root / '.vercelignore').write_text('web/organizer.html\nweb/app.js\n')
             self.assertIsNotNone(validate_website(root))
-            (root / 'web' / 'app.js').write_text('fetch("/api/attendees")')
+            (root / 'web' / 'index.html').write_text('<script src="/attendees.js"></script>')
+            (root / 'web' / 'attendees.js').write_text("fetch('/api/attendees')")
             self.assertIsNone(validate_website(root))
+            (root / 'web' / 'attendees.js').write_text("fetch('/api/attendees'); fetch('/api/sessions')")
+            self.assertIsNotNone(validate_website(root))
+            (root / 'web' / 'attendees.js').write_text("fetch('/api/attendees')")
+            (root / 'web' / 'organizer.html').unlink()
+            self.assertIsNone(validate_website(root))
+            (root / '.vercelignore').write_text('')
+            self.assertIsNotNone(validate_website(root))
 
     def test_current_project_cannot_send_a_deployment_request(self):
         with patch('tools.deploy_vercel.request_api') as request:

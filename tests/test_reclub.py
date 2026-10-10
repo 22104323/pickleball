@@ -33,7 +33,7 @@ class ReclubPreviewTests(unittest.TestCase):
             ],
         }
 
-        def response(path):
+        def response(path, timeout=8):
             if path.startswith('/meets/by-ref/'):
                 return event
             if path.startswith('/players/userIds?'):

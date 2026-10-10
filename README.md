@@ -16,14 +16,14 @@ are no runtime packages to install and no build step.
 | Available now | Pending |
 | --- | --- |
 | Session creation, court count, capacity, and eight play modes | Supported Reclub API/webhook contract and hosted live sync |
-| Pasted player lists and a local read-only preview for public Reclub event links | Verified Reclub export format and upstream write-back |
+| Pasted player lists, local Reclub preview, and a gated read-only single-event website feed | Supported Reclub developer contract, verified export format, and upstream write-back |
 | Separate RSVP, attendance, eligibility, and queue states | Payments, guests, division policies, and notification integrations |
 | Manual check-in, late-arrival tracking, pause, rejoin, and check-out | Attendance reliability rewards and approved future-session penalties |
 | Transactional mode-aware court assignment, partner preferences, starts, corrections, and Rebuild | Winner-stays, manual match editing, and multi-court swap optimization |
 | Recent partner/opponent costs and a small first-game newcomer bonus | Full fairness dashboard and calibrated match-quality metrics |
 | Session-close Glicko-2 periods, rating history, and audit records | Empirical validation of the individual doubles adaptation |
 | Responsive organizer interface, local Live View, reduced-motion support, and random same-browser session links | Hosted organizer authentication, authorization, and multi-organizer access |
-| GitHub review rules, CI checks, and a gated Vercel deployment workflow | Vercel connection, hosted Reclub endpoint, and hosted organizer access controls |
+| GitHub review rules, CI checks, and a gated Vercel deployment workflow | Vercel connection, approval to publish a selected event's attendee fields, and hosted organizer access controls |
 
 ## Contributions and deployment
 
@@ -36,11 +36,12 @@ are kept in a private companion workspace; public releases land on `main`. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Public staging and production deployments require a separate owner approval. The
-Vercel workflow is prepared, **not live**: it deliberately refuses to deploy until
-the hosted read-only attendee endpoint and website connection are implemented and
-the Vercel project is connected. [Deployment setup and Reclub findings](docs/deployment.md)
-describe the actual settings, prerequisites, and limitations. The local organizer
-continues to work independently.
+read-only attendee endpoint and hosted page are implemented, but the Vercel workflow
+is still **not live**: the Vercel project is not connected, no event is configured,
+and public display of attendee names and avatars has not been approved. The workflow
+continues to block deployment until those checks are complete. [Deployment setup and
+Reclub findings](docs/deployment.md) describe the settings, prerequisites, and
+limitations. The local organizer continues to work independently.
 
 `.env` files, credentials, databases, and local Vercel metadata are ignored and
 checked before commits/pushes. `.gitignore` and `.vercelignore` themselves are public
@@ -70,13 +71,15 @@ The database is created at `data/pickleball.sqlite3` and survives server restart
 python3 -m picklequeue.server --port 8081 --database data/another-session.sqlite3
 ```
 
-The first page has a **Generate Link** button. It creates an **Open Play** session and
+The local organizer page has a **Generate Link** button. It creates an **Open Play** session and
 puts a random UUID in the URL fragment. A mapping from that token to the local session
 is kept in this browser's local storage. The link works in the same browser profile on
 the same origin only; it is not an account, a password, or cross-device sharing. Clearing
 browser storage loses the link mapping. Session records remain in the local SQLite
-database across server restarts; they are not uploaded to a hosted session store.
-The landing screen uses a locally served Patrick Hand font; its SIL Open Font License
+database across server restarts; they are not uploaded to a hosted session store. The
+local server serves the organizer at `/` and `/index.html`. Vercel serves a separate
+read-only attendee page and excludes the organizer page and its JavaScript.
+The organizer landing screen uses a locally served Patrick Hand font; its SIL Open Font License
 is included in [web/fonts/OFL.txt](web/fonts/OFL.txt).
 
 Start with a new session. Import a roster or select **Load demo roster**, which
@@ -123,8 +126,11 @@ guarantee. The supplied club-slug endpoint returned 404. The participant records
 did not contain an explicit check-in field; sign-ups must not become automatic
 physical attendance. Guest slots remain separate from an inviter's profile. Review
 the roster before adding it; only selected player names, IDs, and optional organizer
-fields are written to this computer's SQLite session database. The hosted adapter
-is pending; see [the observed response shape and plan](docs/deployment.md).
+fields are written to this computer's SQLite session database. A separate read-only
+Vercel feed is implemented for one event selected with `RECLUB_EVENT_REF`; it does not
+write to SQLite. It is not live until an actual public event is selected and the owner
+confirms that publishing its attendee names and approved avatar URLs is appropriate.
+See [the observed response shape and deployment plan](docs/deployment.md).
 
 | Concept | Current representation | Authority |
 | --- | --- | --- |
@@ -141,11 +147,13 @@ operational record. The app must not claim that Reclub confirmed it. Payment,
 waiver, membership-expiry, and notification fields must be verified independently
 before treating them as available upstream facts.
 
-The public preview includes account profiles when available and named guest slots
+The local preview includes account profiles when available and named guest slots
 when the observed event response supplies a guest name. Unnamed guests are labelled
-for organizer review; they are not represented as the inviting member. No avatars,
-phone numbers, or email addresses are copied. RSVP records are imported as absent
-and remain out of the queue until an organizer checks players in.
+for organizer review; they are not represented as the inviting member. Local imports
+do not copy avatars, phone numbers, or email addresses. The hosted feed may display
+only profile names and HTTPS avatar URLs from two allow-listed Reclub image hosts,
+along with event title, participant-slot ID, and status 1. It does not persist a
+roster. A sign-up is not a check-in; attendance remains a local organizer record.
 
 ### CSV input
 
@@ -525,10 +533,13 @@ picklequeue/
   schema.sql     SQLite tables, constraints, and indexes
   server.py      loopback HTTP server and JSON boundary
 web/
-  index.html     organizer UI and native dialogs
+  index.html     public read-only Reclub attendee page for Vercel
+  organizer.html local organizer UI and native dialogs
+  attendees.js   same-origin attendee feed display
   styles.css     responsive layout, feedback, reduced-motion handling
   app.js         API interactions, navigation, forms, and polling cleanup
   favicon.svg
+api/attendees.py read-only Vercel function for one configured event
 examples/roster.csv
 tests/test_engine.py
 tests/browser-smoke.cjs
