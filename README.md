@@ -22,21 +22,23 @@ are no runtime packages to install and no build step.
 | Transactional mode-aware court assignment, partner preferences, starts, corrections, and Rebuild | Winner-stays, manual match editing, and multi-court swap optimization |
 | Recent partner/opponent costs and a small first-game newcomer bonus | Full fairness dashboard and calibrated match-quality metrics |
 | Session-close Glicko-2 periods, rating history, and audit records | Empirical validation of the individual doubles adaptation |
-| Responsive organizer interface, local Live View, and reduced-motion support | Hosted organizer authentication, authorization, and multi-organizer access |
+| Responsive organizer interface, local Live View, reduced-motion support, and random same-browser session links | Hosted organizer authentication, authorization, and multi-organizer access |
 | GitHub review rules, CI checks, and a gated Vercel deployment workflow | Vercel connection, hosted Reclub endpoint, and hosted organizer access controls |
 
 ## Contributions and deployment
 
-This repository is public; that does not grant public write access. Contributors
-use feature branches or forks and submit PRs to `develop`. Reviewed changes promote
-to `staging`, then `main`. GitHub requires reviews and passing checks on all three,
-blocks force pushes/deletion, and has no configured bypass actors. `@22104323` is
-the code owner. See [CONTRIBUTING.md](CONTRIBUTING.md).
+This repository is public; that does not grant upstream write access. Contributors
+can fork it, push to their fork, and submit a PR to `main`. GitHub requires a PR and
+the `verify` check, blocks force pushes and deletion, and has no bypass actors. The
+sole maintainer `@22104323` can merge after checks pass; an approval count is not
+required because there is no independent reviewer. Development and staging branches
+are kept in a private companion workspace; public releases land on `main`. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-Staging and production deployments require a separate owner approval. The Vercel
-workflow is prepared, **not live**: it deliberately refuses to deploy until the
-hosted read-only attendee endpoint and website connection are implemented and the
-Vercel project is connected. [Deployment setup and Reclub findings](docs/deployment.md)
+Public staging and production deployments require a separate owner approval. The
+Vercel workflow is prepared, **not live**: it deliberately refuses to deploy until
+the hosted read-only attendee endpoint and website connection are implemented and
+the Vercel project is connected. [Deployment setup and Reclub findings](docs/deployment.md)
 describe the actual settings, prerequisites, and limitations. The local organizer
 continues to work independently.
 
@@ -68,6 +70,15 @@ The database is created at `data/pickleball.sqlite3` and survives server restart
 python3 -m picklequeue.server --port 8081 --database data/another-session.sqlite3
 ```
 
+The first page has a **Generate Link** button. It creates an **Open Play** session and
+puts a random UUID in the URL fragment. A mapping from that token to the local session
+is kept in this browser's local storage. The link works in the same browser profile on
+the same origin only; it is not an account, a password, or cross-device sharing. Clearing
+browser storage loses the link mapping. Session records remain in the local SQLite
+database across server restarts; they are not uploaded to a hosted session store.
+The landing screen uses a locally served Patrick Hand font; its SIL Open Font License
+is included in [web/fonts/OFL.txt](web/fonts/OFL.txt).
+
 Start with a new session. Import a roster or select **Load demo roster**, which
 creates 30 clearly marked synthetic players in an empty session. Demo identities
 are isolated from real roster imports. In **Attendance**, confirm eligibility
@@ -80,8 +91,8 @@ button row on mobile. Individual skill levels are set by clicking a star; arrow 
 between levels, and the **Clear** control removes a single player's rating. The bulk
 level dropdown remains available for selected players.
 
-The session workspace uses a compact top header with a navigation menu and session
-selector. Live Courts appear above the rotation: the ordered Queue sits on the left,
+The session workspace uses a compact top header, session selector, and left-side
+navigation buttons. Live Courts appear above the rotation: the ordered Queue sits on the left,
 with separate numbered Up Next cards beside it. Queue rows include reserved players
 until their game starts; the occupied-court counter counts only games actually playing.
 Use **Start Up Next** on a court or **Send to Court** on its reserved card to start it.

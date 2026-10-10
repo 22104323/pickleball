@@ -12,6 +12,14 @@ class PullRequestPolicyTests(unittest.TestCase):
         self.assertIsNotNone(validate('ci(#1): promote', 'develop', 'main'))
         self.assertIsNone(validate('ci(#1): promote', 'staging', 'main'))
 
+    def test_public_main_accepts_fork_contributions_and_maintainer_release_branches(self):
+        public = '22104323/pickleball'
+        self.assertIsNone(validate('feat(#3): add link flow', 'feature/#3', 'main', False, public))
+        self.assertIsNone(validate('feat(#3): publish release', 'release/#3', 'main', True, public))
+        self.assertIsNotNone(validate('feat(#3): add link flow', 'feature/#3', 'main', True, public))
+        self.assertIsNotNone(validate('feat(#4): add link flow', 'feature/#3', 'main', False, public))
+        self.assertIsNotNone(validate('ci(#3): skip staging', 'develop', 'main', True, public))
+
     def test_staging_accepts_only_internal_develop(self):
         self.assertIsNotNone(validate('ci(#1): promote', 'develop', 'staging', False))
         self.assertIsNone(validate('ci(#1): promote', 'develop', 'staging'))

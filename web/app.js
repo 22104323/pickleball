@@ -26,6 +26,39 @@ let guideStep = -1;
 let firstRender = true;
 let revealObserver = null;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const SESSION_LINKS_KEY = 'courtside.session-links.v1';
+
+function sessionLinks() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SESSION_LINKS_KEY) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
+}
+
+function randomLinkToken() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+
+function sessionLinkFor(id) {
+  const links = sessionLinks();
+  const existing = Object.entries(links).find(([,sessionId])=>Number(sessionId)===Number(id));
+  if (existing) return existing[0];
+  const token = randomLinkToken();
+  try {
+    localStorage.setItem(SESSION_LINKS_KEY,JSON.stringify({...links,[token]:Number(id)}));
+  } catch {
+    throw new Error('This browser could not save the session link. Check local storage and try again.');
+  }
+  return token;
+}
+
+function sessionIdForLink(token) {
+  const id = Number(sessionLinks()[token]);
+  return Number.isSafeInteger(id) && sessions.some(session=>session.id===id) ? id : null;
+}
 
 function clearReveals() {
   revealObserver?.disconnect();
@@ -184,7 +217,9 @@ function closed() { return state?.session.status === 'closed'; }
 function syncNavigation() {
   const params = new URLSearchParams(location.hash.slice(1));
   view = views.includes(params.get('view')) ? params.get('view') : 'queue';
-  return Number(params.get('session')) || sessions[0]?.id || null;
+  const token = params.get('link');
+  if (token) return sessionIdForLink(token);
+  return null;
 }
 
 async function load(animate = false) {
@@ -202,7 +237,7 @@ async function load(animate = false) {
 }
 
 function navigate(id, nextView = view, replace = false) {
-  const hash = id ? `#session=${id}&view=${nextView}` : `#view=${nextView}`;
+  const hash = id ? `#link=${encodeURIComponent(sessionLinkFor(id))}&view=${encodeURIComponent(nextView)}` : `#view=${nextView}`;
   if (hash !== location.hash) history[replace?'replaceState':'pushState'](null,'',hash);
   view = nextView;
   swapConfirmation = null;
@@ -213,9 +248,14 @@ function navigate(id, nextView = view, replace = false) {
 function render(animate = false) {
   clearReveals();
   document.body.classList.toggle('has-session',Boolean(state));
+  $('#landing-page').hidden = Boolean(state);
+  const route = new URLSearchParams(location.hash.slice(1));
+  const hasRequestedLink = route.has('link') || route.has('session');
+  $('#landing-message').hidden = !hasRequestedLink || Boolean(state);
+  $('#landing-message').textContent = hasRequestedLink && !state ? 'This session link is not available in this browser. Generate a new link on the original browser.' : '';
   if (swapConfirmation && (swapConfirmation.session !== state?.session.id || swapConfirmation.revision !== state?.session.revision)) swapConfirmation = null;
   const selection = $('#session-select');
-  selection.innerHTML = (sessions.length ? sessions.map(s => `<option value="${s.id}" ${s.id===state?.session.id?'selected':''}>${e(s.name)}${s.status==='closed'?' · closed':''}</option>`).join('') : '<option value="">No sessions yet</option>') + '<option value="new">+ New session</option>';
+  selection.innerHTML = (state ? `<option value="${state.session.id}" selected>${e(state.session.name)}${state.session.status==='closed'?' · closed':''}</option>` : '<option value="">No sessions yet</option>') + '<option value="new">+ New session</option>';
   document.querySelectorAll('[data-view]').forEach(node => {
     node.classList.toggle('active',node.dataset.view===view);
     if(node.dataset.view===view) node.setAttribute('aria-current','page'); else node.removeAttribute('aria-current');
@@ -228,7 +268,6 @@ function render(animate = false) {
     $('#summary').hidden = true;
     $('#fill-button').hidden=true;
     $('#view-content').innerHTML = `<div class="welcome"><div><h2>A fair rotation starts with who’s here.</h2><p>Bring your roster, check players in, and build balanced doubles games. Everyone’s wait matters. Strong players don’t get to stack.</p><button class="btn" data-open="create-dialog">Create your first session <span aria-hidden="true">↗</span></button><span class="welcome-note">Local workspace · no sign-in or installation needed</span></div><div class="welcome-court" aria-hidden="true"></div></div><div class="helper-strip"><strong>Just trying it out?</strong><span>Create a session, then load 30 synthetic demo players.</span></div>`;
-    revealInitialContent();
     return;
   }
   const {session:s,metrics:m} = state;
@@ -482,6 +521,19 @@ document.addEventListener('keydown',event=>{
 $('#session-select').addEventListener('change',event=>{
   if(event.target.value==='new'){event.target.value=state?.session.id||'';openDialog('create-dialog');}
   else navigate(Number(event.target.value));
+});
+$('#generate-link').addEventListener('click',async()=>{
+  if(busy)return;
+  const button=$('#generate-link');
+  $('#landing-message').hidden=true;
+  button.disabled=true;busy=true;
+  try{
+    const payload=await api('/api/sessions',{name:'Open Play',starts_at:Date.now()/1000,court_count:1,max_players:30,mode:'balanced'});
+    const token=sessionLinkFor(payload.session.id);
+    navigate(payload.session.id,'queue',true);
+    try{await navigator.clipboard?.writeText(`${location.origin}${location.pathname}${location.search}#link=${encodeURIComponent(token)}&view=queue`);}catch{}
+  }catch(error){$('#landing-message').textContent=error.message;$('#landing-message').hidden=false;}
+  finally{busy=false;button.disabled=false;}
 });
 document.querySelectorAll('.mode-picker input[name="mode"]').forEach(input=>input.addEventListener('change',()=>{
   document.querySelectorAll('.mode-option').forEach(option=>option.classList.toggle('selected',option.querySelector('input')?.checked));

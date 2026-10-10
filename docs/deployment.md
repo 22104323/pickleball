@@ -1,31 +1,37 @@
 # GitHub review and Vercel deployment
 
-## Implemented controls
+## Repository access and branch rules
 
-The repository is public. The owner remains `22104323`; no organization or collaborators
-were created. Server-side rulesets protect `develop`, `staging`, and `main`, with no bypass
-actors. One approval, resolved discussions, code-owner approval when CODEOWNERS is on the
-base branch, dismissal of stale reviews, last-push approval, and GitHub Actions `verify`
-are required. Force pushes and deletion are blocked. The default branch is `develop`.
+The public release repository is `22104323/pickleball`, with `main` as its default
+branch. The private development workspace is `22104323/pickleball-private`, with
+`develop` as its default branch. `@22104323` is the only upstream writer in either
+repository. Contributors can fork the public repository, push to their own fork, and
+open a PR to public `main`; forks do not grant upstream write access. The public repo
+is a personal repository, not an organization.
 
-| Change | PR route | Merge | Deployment |
+Both repositories have active rulesets with no bypass actors. Protected branches require
+a PR, resolved review threads, and the GitHub Actions `verify` check. Required approval
+count is zero because this is a one-maintainer project and GitHub prevents self-approval.
+Force pushes and deletion are blocked. Development contribution checks are strict;
+promotion checks are non-strict so a downstream promotion does not require rewriting
+its upstream branch. Contributions squash; protected promotion branches merge to keep
+shared history.
+
+| Repository | Branch flow | Merge | Deployment |
 | --- | --- | --- | --- |
-| Contributor change | feature/bugfix/etc. → develop | Squash; up-to-date check | None |
-| Test candidate | develop → staging | Merge commit; checks and review | Staging preview, after owner approval |
-| Production candidate | staging → main | Merge commit; checks and review | Production, after owner approval |
+| Private workspace | issue branch → `develop` → `staging` → `main` | Squash contributions; merge promotions | Staging/production workflow is preflight-gated |
+| Public release | fork PR → `main`; maintainer release branch → `main` | Squash after `verify` | Blocked until hosted prerequisites are met |
 
-Promotion commits preserve upstream ancestry; squash-only promotions across long-lived
-branches would repeatedly diverge. This is an intentional adaptation of Core's rules.
-The staging and production rules use non-strict status checks so promotion does not
-require merging a downstream commit back into protected upstream first. Contribution
-checks on develop remain strict. CI runs on PR merge trees; conflicting promotions
-cannot merge. All branch changes still require review.
+The private ruleset protects `develop`, `staging`, and `main`. The public release ruleset
+protects `main`; temporary release branches are deleted after merge. Public `develop`,
+`staging`, and the earlier public feature branch are being retired after their history is
+preserved in the private workspace and the replacement release is ready.
 
-The `staging` and `production` GitHub environments allow only their respective branch
-and require `@22104323` approval. Admin deployment bypass is disabled. The owner may
-approve a deployment initiated by their own merge; otherwise a one-maintainer release
-would be impossible. PR review still cannot be self-approved. Only the owner currently
-has write access; fork PRs are available to other contributors.
+The public `staging` and `production` GitHub environments have owner approval gates for
+their allowed branch. The private GitHub plan does not support required-reviewer
+protection on private environments; no equivalent private approval gate is configured.
+Deployment remains blocked by the repository's preflight until the hosted application
+boundary is implemented, so the private staging workflow cannot deploy the local app.
 
 Actions are SHA-pinned, restricted to GitHub-owned actions, read-only by default, and
 cannot approve PRs. All external fork workflows need approval. Secret scanning, push
@@ -33,13 +39,13 @@ protection, private vulnerability reporting, Dependabot security updates, local 
 and private-artifact checks are enabled. Their scope does not prove complete secret
 absence or enforce the currently unachieved 90% coverage target.
 
-## Prepared deployment, not yet live
+## Vercel deployment status
 
 `vercel.json` disables automatic Git deployments so importing the project cannot bypass
 the GitHub environment gate. `.github/workflows/deploy-vercel.yml` reruns tests and
-requires hosted-route preflight before the approved deployment job can run. The REST
-client pins the reviewed Git commit and waits for Vercel READY; queued or failed builds
-are not reported as successful. No deployment dependencies or CLI packages are installed.
+requires hosted-route preflight before the deployment job can run. The REST client pins
+the reviewed Git commit and waits for Vercel READY; queued or failed builds are not
+reported as successful. No deployment dependencies or CLI packages are installed.
 
 Preflight deliberately fails until a reviewed `api/attendees.py` and its website connection
 exist. The current `web/app.js` uses the local organizer API, which must not be published
@@ -47,13 +53,15 @@ as an unauthenticated hosted API. Vercel cannot provide persistence for the loca
 file: its function filesystem is read-only apart from temporary scratch space.
 [Vercel SQLite guidance](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel)
 
-No Vercel credential, connected browser session, or existing CLI login is available in
-the current workspace. No Vercel project, domain, or live deployment has been created.
+The only Vercel deployment found is for the initial README-only commit, not the current
+Courtside application. The private staging promotion's deployment workflow failed at
+the hosted-route preflight, so the deployment job was skipped. No current app deployment
+or verified Vercel project connection exists.
 
 Before enabling deployment:
 
 1. Implement/review the no-database Reclub website feed described below and its tests.
-2. Connect this repository to a Vercel project, with project root at this repo and
+2. Connect the public release repository to a Vercel project, with project root at this repo and
    production branch `main`. Keep automatic deployments disabled in the committed config.
 3. In each protected GitHub environment, store `VERCEL_TOKEN` as a secret; set
    `VERCEL_PROJECT_ID` and optional `VERCEL_TEAM_ID` as variables. Use a token scoped
@@ -92,6 +100,14 @@ Official integration questions can go through [Reclub support](https://help.recl
 No message was sent to Reclub.
 
 ## Proposed no-database attendee website
+
+The website currently has a local same-browser session-link landing flow. **Generate Link**
+creates a local `Open Play` session, stores a random UUID-to-session mapping in browser
+`localStorage`, and puts the token in the URL fragment. The token is intentionally usable
+only in that browser profile on that origin. It is not authentication, a secret access
+control, cross-device sharing, or a hosted session record. Clearing browser storage loses
+the mapping; local SQLite records persist on the organizer's computer. Do not expose the
+local mutation API as a public service.
 
 The user wants the website to reflect Reclub sign-ups without CSV or a duplicate member
 database. A small Vercel serverless adapter can fetch one organizer-selected public event

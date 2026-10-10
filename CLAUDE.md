@@ -44,19 +44,20 @@ need a concrete approved scope; do not assume another project's provider choices
   `hotfix/#<issue-number>`, `release/#<issue-number>`, or `docs/#<issue-number>`.
 - Commits and PR titles use Conventional Commits with the actual issue in the scope.
   Website changes use `[Browser]` after the prefix. No co-author or generated-by footers.
-- Contributions target `develop` and merge by squash. `develop` promotes to `staging`,
-  then `staging` promotes to `main`, using reviewed merge commits to retain common
-  ancestry for repeated promotions. This intentionally differs from Core's squash-only
-  workflow, because an additional long-lived staging branch needs shared history.
-- GitHub enforces one approval, code-owner approval when CODEOWNERS is on the base,
-  stale-review dismissal, last-push approval, resolved threads, and the `verify` check.
-- `develop` must be up to date. Promotion branches accept only the upstream protected
-  branch and use merge commits; they do not require rewriting the upstream branch to
-  include a downstream promotion commit. CI tests GitHub's proposed merge tree.
-- No direct pushes, force pushes, branch deletion, bypass actors, or `--no-verify` on
-  protected branches. GitHub enforces protection; local hooks are an additional guard.
-- Explicit authorization is still needed for Git publication. Never merge just because
-  checks pass. The sole current maintainer cannot approve a PR authored by the same account.
+- The public repository keeps releases on `main`; contributors fork it and open PRs to
+  `main`. A temporary maintainer `release/#<issue>` branch is used for owner-authored
+  releases. The separate private workspace uses `feature/#<issue> → develop → staging
+  → main` PRs, with squash for contributions and merge commits for promotions.
+- Both repositories require PRs and the `verify` status check on protected branches.
+  The one-person process has no required approval because the sole maintainer cannot
+  independently review their own PR. `@22104323` may merge once the required CI passes.
+- In the private workspace, `develop` promotes only to `staging`, then `staging` to
+  `main`; merge commits preserve ancestry. Public `main` accepts issue-linked fork PRs
+  and owner-authored temporary release PRs only.
+- No direct protected-branch pushes, force pushes, branch deletion, bypass actors, or
+  `--no-verify`. GitHub rulesets enforce the policy; local hooks provide another guard.
+- Git publication still needs explicit user authorization for the scope of a release.
+  Passing checks alone do not authorize unrelated changes or a deployment.
 - Before opening a PR, settle issue reference, relevant screenshot states, omissions,
   review readiness, and any requested reviewers. Use `Refs` for incomplete work.
 
@@ -68,7 +69,9 @@ need a concrete approved scope; do not assume another project's provider choices
 - Core's 90% line-coverage target remains a quality requirement. It is **not currently
   enforced or achieved** by this repo's CI; coverage instrumentation and browser CI
   remain pending. Never claim the existing unittest check proves that threshold.
-- Both deployment environments require `@22104323` approval and disallow admin bypass.
+- Public staging and production GitHub environments require `@22104323` approval and
+  disallow deployment bypass. The private GitHub plan does not offer required reviewers
+  for private environments; the private deployment workflow remains blocked at preflight.
   Staging deploys only from `staging`; production only from `main`.
 - Vercel automatic Git deployments are disabled in `vercel.json`. Use the gated GitHub
   workflow, immutable commit SHA, environment-scoped token, and a checked READY state.
