@@ -13,8 +13,9 @@ deployment hosts, project board, and identifier conventions are not this project
 - Repository/deployment checks in `tools/`; CI in `.github/workflows/`; hooks in `.githooks/`.
 - The current organizer server is loopback-only. Never expose its unauthenticated
   mutation routes on Vercel or another public host.
-- The user wants a Vercel website reflecting Reclub sign-ups without a second member
-  database. The read-only hosted adapter and frontend connection are not implemented.
+- A local read-only Reclub event preview is implemented in the roster review flow.
+  It uses observed public endpoints as a compatibility adapter, not a supported API
+  contract. The hosted Reclub adapter and Vercel website connection remain pending.
   No new stack or storage provider has been selected for a hosted queue engine.
 
 ## Commands

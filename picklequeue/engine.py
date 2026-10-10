@@ -11,6 +11,13 @@ from pathlib import Path
 from .matching import choose_game
 from .ratings import Rating, doubles_opponent, update_rating
 
+MODES = ('balanced','social_mix','skill_separated','winners_losers','skill_courts',
+         'mixed_doubles','king_queen','club_wars')
+
+
+def skill_band(rating):
+    return 'Beginner' if rating < 1100 else 'Intermediate' if rating < 1450 else 'Advanced' if rating < 1750 else 'Competitive'
+
 
 class Problem(ValueError):
     def __init__(self, message, status=400):
@@ -45,8 +52,15 @@ class Engine:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise Problem('Unsupported database version; no data was changed.')
+            if version == 1:
+                db.execute('BEGIN IMMEDIATE')
+                db.execute("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'balanced' CHECK (mode IN ('balanced','social_mix','skill_separated','winners_losers','skill_courts','mixed_doubles','king_queen','club_wars'))")
+                db.execute("ALTER TABLE members ADD COLUMN gender TEXT CHECK (gender IN ('M','F'))")
+                db.execute('ALTER TABLE roster ADD COLUMN club_group TEXT')
+                db.execute('PRAGMA user_version = 2')
+                db.commit()
             db.executescript(Path(__file__).with_name('schema.sql').read_text())
 
     def connect(self):
@@ -88,12 +102,15 @@ class Engine:
         name = text(data.get('name'), 'Session name')
         courts = integer(data.get('court_count', 2), 'Courts', 1, 8)
         maximum = integer(data.get('max_players', 30), 'Capacity', 4, 200)
+        mode = data.get('mode', 'balanced')
+        if mode not in MODES:
+            raise Problem('Choose a supported play mode.')
         start = data.get('starts_at', self.clock())
         if isinstance(start, bool) or not isinstance(start, (int, float)) or not 0 < start < 4102444800:
             raise Problem('Start time must be a valid Unix timestamp before 2100.')
         with self.connect() as db:
-            id_session = db.execute('INSERT INTO sessions(name,starts_at,court_count,max_players,created_at) VALUES(?,?,?,?,?)',
-                                    (name, start, courts, maximum, self.clock())).lastrowid
+            id_session = db.execute('INSERT INTO sessions(name,starts_at,court_count,max_players,mode,created_at) VALUES(?,?,?,?,?,?)',
+                                    (name, start, courts, maximum, mode, self.clock())).lastrowid
             self.audit(db, id_session, 'session.created', {'court_count': courts, 'max_players': maximum})
         return id_session
 
@@ -104,8 +121,13 @@ class Engine:
             if not session:
                 raise Problem('Session not found.', 404)
             players = [dict(p) for p in db.execute('''SELECT r.*, m.name, m.source, m.external_id,
-                m.rating, m.deviation, m.volatility, m.rated_games
-                FROM roster r JOIN members m ON m.id=r.id_member WHERE r.id_session=?
+                m.rating, m.deviation, m.volatility, m.rated_games, m.gender,
+                partner.id AS paired_roster_id, partner_member.name AS partner_name
+                FROM roster r JOIN members m ON m.id=r.id_member
+                LEFT JOIN team_pairs tp ON tp.id_session=r.id_session AND r.id IN (tp.id_player_a,tp.id_player_b)
+                LEFT JOIN roster partner ON partner.id=CASE WHEN r.id=tp.id_player_a THEN tp.id_player_b ELSE tp.id_player_a END
+                LEFT JOIN members partner_member ON partner_member.id=partner.id_member
+                WHERE r.id_session=?
                 ORDER BY CASE WHEN r.ticket IS NULL THEN 1 ELSE 0 END,r.ticket,r.id''', (id_session,))]
             positions = 0
             for p in players:
@@ -116,22 +138,36 @@ class Engine:
                 p['wait_minutes'] = max(0, (self.clock() - p['queued_at']) / 60) if p['queued_at'] else 0
                 p['eligible'] = p['membership'] == 'active' and p['waiver'] == 'valid'
                 p['provisional'] = p['rated_games'] < 10
-                p['band'] = 'Beginner' if p['rating'] < 1100 else 'Intermediate' if p['rating'] < 1450 else 'Advanced' if p['rating'] < 1750 else 'Competitive'
+                p['band'] = skill_band(p['rating'])
             games = []
             for row in db.execute('SELECT * FROM games WHERE id_session=? ORDER BY id DESC', (id_session,)):
                 game = dict(row)
-                game['players'] = [dict(p) for p in db.execute('''SELECT gp.*,m.name FROM game_players gp
+                game['players'] = [dict(p) for p in db.execute('''SELECT gp.*,m.name,m.gender FROM game_players gp
                     JOIN roster r ON r.id=gp.id_roster JOIN members m ON m.id=r.id_member
                     WHERE gp.id_game=? ORDER BY gp.side,gp.id_roster''', (game['id'],))]
                 games.append(game)
             audit = [dict(a) for a in db.execute('SELECT * FROM audit_log WHERE id_session=? ORDER BY id DESC LIMIT 30', (id_session,))]
             completed = [g for g in games if g['status'] == 'completed']
+            wins, latest = {}, {}
+            for game in completed:
+                for player in game['players']:
+                    won = (game['score_a'] > game['score_b']) == (player['side'] == 'a')
+                    id_player = player['id_roster']
+                    wins[id_player] = wins.get(id_player, 0) + int(won)
+                    latest.setdefault(id_player, 'winner' if won else 'loser')
+            standings = []
+            for player in players:
+                player['wins'] = wins.get(player['id'], 0)
+                player['losses'] = player['games_played'] - player['wins']
+                player['last_outcome'] = latest.get(player['id'])
+                standings.append({key: player[key] for key in ('id','name','wins','losses','games_played')})
+            standings.sort(key=lambda player: (-player['wins'], player['games_played'] == 0, player['losses'], player['name'].casefold(), player['id']))
             metrics = {'present': sum(p['attendance'] == 'present' for p in players),
                        'waiting': positions, 'on_court': sum(p['queue_state'] in ('assigned', 'playing') for p in players),
                        'completed_games': len(completed), 'no_shows': sum(p['attendance'] == 'no_show' for p in players),
                        'late': sum(p['is_late'] for p in players),
                        'stomp_rate': sum(not .35 <= g['expected_a'] <= .65 for g in completed) / len(completed) if completed else None}
-            return {'session': dict(session), 'players': players, 'games': games, 'metrics': metrics, 'audit': audit}
+            return {'session': dict(session), 'players': players, 'games': games, 'metrics': metrics, 'standings': standings, 'audit': audit}
 
     def import_roster(self, id_session, revision, content, source='reclub', club_key=''):
         if source not in ('reclub', 'manual', 'demo'):
@@ -143,7 +179,7 @@ class Engine:
             reader = csv.DictReader(io.StringIO(content.lstrip('\ufeff')), strict=True)
             required = {'external_id', 'name', 'rsvp', 'membership', 'waiver'}
             if not reader.fieldnames or not required <= set(reader.fieldnames) or len(set(reader.fieldnames)) != len(reader.fieldnames):
-                raise Problem('CSV needs unique headers: external_id,name,rsvp,membership,waiver; optional initial_rating.')
+                raise Problem('CSV needs unique headers: external_id,name,rsvp,membership,waiver; optional initial_rating,gender,club_group.')
             rows = list(reader)
         except csv.Error as error:
             raise Problem('CSV could not be parsed.') from error
@@ -167,30 +203,153 @@ class Engine:
                 raise Problem('Initial rating must be a number.')
             if not 0 <= rating <= 4000:
                 raise Problem('Initial rating must be between 0 and 4000.')
-            validated.append((external, name, rsvp, membership, waiver, rating))
+            gender = (row.get('gender') or '').strip().upper() or None
+            if gender not in (None, 'M', 'F'):
+                raise Problem('Gender must be M, F, or blank; do not infer it from a name.')
+            club_group = (row.get('club_group') or '').strip() or None
+            if club_group is not None:
+                club_group = text(club_group, 'Club group', 40)
+            validated.append((external, name, rsvp, membership, waiver, rating, gender, club_group))
         with self.transaction(id_session, revision) as (db, session):
             if source != 'demo' and db.execute("SELECT 1 FROM roster r JOIN members m ON m.id=r.id_member WHERE r.id_session=? AND m.source='demo' LIMIT 1", (id_session,)).fetchone():
                 raise Problem('Demo sessions cannot mix with imported club players. Create a new session for your roster.', 409)
-            for external, name, rsvp, membership, waiver, rating in validated:
+            for external, name, rsvp, membership, waiver, rating, gender, club_group in validated:
                 member = db.execute('SELECT * FROM members WHERE source=? AND club_key=? AND external_id=?', (source, club_key, external)).fetchone()
                 if member is None:
-                    id_member = db.execute('INSERT INTO members(source,club_key,external_id,name,rating) VALUES(?,?,?,?,?)',
-                                          (source, club_key, external, name, rating)).lastrowid
+                    id_member = db.execute('INSERT INTO members(source,club_key,external_id,name,rating,gender) VALUES(?,?,?,?,?,?)',
+                                          (source, club_key, external, name, rating, gender)).lastrowid
                     member = db.execute('SELECT * FROM members WHERE id=?', (id_member,)).fetchone()
                 else:
                     id_member = member['id']
-                    db.execute('UPDATE members SET name=? WHERE id=?', (name, id_member))
+                    if gender is None:
+                        db.execute('UPDATE members SET name=? WHERE id=?', (name, id_member))
+                    else:
+                        db.execute('UPDATE members SET name=?,gender=? WHERE id=?', (name, gender, id_member))
                 old = db.execute('SELECT * FROM roster WHERE id_session=? AND id_member=?', (id_session, id_member)).fetchone()
                 if old and old['queue_state'] in ('assigned', 'playing') and (membership != 'active' or waiver != 'valid'):
                     raise Problem('An assigned player became ineligible. Cancel their assignment or finish the game before importing.', 409)
-                db.execute('''INSERT INTO roster(id_session,id_member,rsvp,membership,waiver,base_rating,base_deviation,base_volatility)
-                    VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id_session,id_member) DO UPDATE SET
-                    rsvp=excluded.rsvp,membership=excluded.membership,waiver=excluded.waiver''',
-                    (id_session, id_member, rsvp, membership, waiver, member['rating'], member['deviation'], member['volatility']))
+                db.execute('''INSERT INTO roster(id_session,id_member,rsvp,membership,waiver,base_rating,base_deviation,base_volatility,club_group)
+                    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id_session,id_member) DO UPDATE SET
+                    rsvp=excluded.rsvp,membership=excluded.membership,waiver=excluded.waiver,
+                    club_group=COALESCE(excluded.club_group,roster.club_group)''',
+                    (id_session, id_member, rsvp, membership, waiver, member['rating'], member['deviation'], member['volatility'], club_group))
                 if old and old['queue_state'] == 'waiting' and (membership != 'active' or waiver != 'valid'):
                     db.execute("UPDATE roster SET queue_state='off',ticket=NULL,queued_at=NULL WHERE id=?", (old['id'],))
             self.audit(db, id_session, 'roster.imported', {'source': source, 'rows': len(rows)})
         return len(rows)
+
+    def import_reviewed(self, id_session, revision, players, pairs=None, source='manual', club_key='manual'):
+        if source not in ('reclub','manual'):
+            raise Problem('Reviewed imports must be manual or Reclub players.')
+        club_key = text(club_key, 'Club identifier')
+        if not isinstance(players, list) or not 1 <= len(players) <= 200:
+            raise Problem('Review between 1 and 200 players before adding them.')
+        if pairs is None:
+            pairs = []
+        if not isinstance(pairs, list) or len(pairs) > 100:
+            raise Problem('Invalid player pair list.')
+        validated, seen = [], set()
+        for player in players:
+            if not isinstance(player, dict):
+                raise Problem('Each reviewed player must be an object.')
+            external = text(player.get('external_id'), 'Player ID', 120)
+            if external in seen:
+                raise Problem('Each reviewed player needs a unique player ID.')
+            seen.add(external)
+            name = text(player.get('name'), 'Player name', 80)
+            rating = player.get('rating')
+            if rating is not None:
+                if isinstance(rating, bool) or not isinstance(rating, (int,float)) or not 0 <= rating <= 4000:
+                    raise Problem('Player ratings must be from 0 to 4000.')
+                rating = float(rating)
+            gender = player.get('gender') or None
+            if gender not in (None,'M','F'):
+                raise Problem('Choose M, F, or no gender; do not infer it from a name.')
+            group = player.get('club_group') or None
+            if group is not None:
+                group = text(group, 'Club group', 40)
+            validated.append({'external':external,'name':name,'rating':rating,'gender':gender,'group':group})
+        validated_pairs, paired = [], set()
+        for pair in pairs:
+            if not isinstance(pair, list) or len(pair) != 2 or any(not isinstance(value, str) for value in pair) or pair[0] == pair[1] or pair[0] not in seen or pair[1] not in seen:
+                raise Problem('Every pair must contain two different selected players.')
+            if pair[0] in paired or pair[1] in paired:
+                raise Problem('A player can have only one partner.')
+            paired.update(pair)
+            validated_pairs.append(tuple(pair))
+        with self.transaction(id_session, revision) as (db, _session):
+            if db.execute("SELECT 1 FROM roster r JOIN members m ON m.id=r.id_member WHERE r.id_session=? AND m.source='demo' LIMIT 1", (id_session,)).fetchone():
+                raise Problem('Demo sessions cannot mix with imported club players. Create a new session for your roster.', 409)
+            roster_by_external = {}
+            for player in validated:
+                member = db.execute('SELECT * FROM members WHERE source=? AND club_key=? AND external_id=?',
+                                     (source,club_key,player['external'])).fetchone()
+                if member is None:
+                    id_member = db.execute('''INSERT INTO members(source,club_key,external_id,name,rating,gender)
+                        VALUES(?,?,?,?,?,?)''', (source,club_key,player['external'],player['name'],1200 if player['rating'] is None else player['rating'],player['gender'])).lastrowid
+                    member = db.execute('SELECT * FROM members WHERE id=?', (id_member,)).fetchone()
+                else:
+                    id_member = member['id']
+                    if player['gender'] is None:
+                        db.execute('UPDATE members SET name=? WHERE id=?', (player['name'],id_member))
+                    else:
+                        db.execute('UPDATE members SET name=?,gender=? WHERE id=?', (player['name'],player['gender'],id_member))
+                old = db.execute('SELECT * FROM roster WHERE id_session=? AND id_member=?', (id_session,id_member)).fetchone()
+                if old and old['queue_state'] in ('assigned', 'playing') and (
+                        (player['gender'] is not None and player['gender'] != member['gender']) or
+                        (player['group'] is not None and player['group'] != old['club_group'])):
+                    raise Problem('Resolve the active game before changing player categories or groups.', 409)
+                if old:
+                    db.execute('''UPDATE roster SET rsvp='yes',club_group=COALESCE(?,club_group)
+                        WHERE id=?''', (player['group'],old['id']))
+                    id_roster = old['id']
+                else:
+                    id_roster = db.execute('''INSERT INTO roster(id_session,id_member,rsvp,membership,waiver,
+                        base_rating,base_deviation,base_volatility,club_group)
+                        VALUES(?,?,'yes','unknown','unknown',?,?,?,?)''',
+                        (id_session,id_member,member['rating'],member['deviation'],member['volatility'],player['group'])).lastrowid
+                roster_by_external[player['external']] = id_roster
+            for first, second in validated_pairs:
+                id_a,id_b=sorted((roster_by_external[first],roster_by_external[second]))
+                existing = db.execute('''SELECT id_player_a,id_player_b FROM team_pairs
+                    WHERE id_session=? AND (id_player_a IN (?,?) OR id_player_b IN (?,?))''',
+                    (id_session,id_a,id_b,id_a,id_b)).fetchone()
+                if existing and (existing['id_player_a'],existing['id_player_b']) != (id_a,id_b):
+                    raise Problem('One of these players already has another partner. Unpair them first.', 409)
+                if not existing:
+                    if db.execute("SELECT 1 FROM roster WHERE id IN (?,?) AND queue_state IN ('assigned','playing')",
+                                  (id_a,id_b)).fetchone():
+                        raise Problem('Resolve active games before changing a pair.', 409)
+                    db.execute('INSERT INTO team_pairs(id_session,id_player_a,id_player_b,created_at) VALUES(?,?,?,?)',
+                               (id_session,id_a,id_b,self.clock()))
+            self.audit(db,id_session,'roster.reviewed_imported',{'source':source,'rows':len(validated),'pairs':len(validated_pairs)})
+        return len(validated)
+
+    def checkin_all(self, id_session, revision):
+        with self.transaction(id_session, revision) as (db, session):
+            absent = db.execute("SELECT r.*,m.rating,m.deviation,m.volatility FROM roster r JOIN members m ON m.id=r.id_member WHERE r.id_session=? AND r.rsvp='yes' AND r.attendance IN ('absent','no_show') ORDER BY r.id", (id_session,)).fetchall()
+            present = db.execute("SELECT COUNT(*) FROM roster WHERE id_session=? AND attendance='present'", (id_session,)).fetchone()[0]
+            candidates=[]
+            for player in absent:
+                other=db.execute('''SELECT 1 FROM roster r JOIN sessions s ON s.id=r.id_session
+                    WHERE r.id_member=? AND r.id_session!=? AND s.status='active'
+                    AND (r.attendance='present' OR r.games_played>0)''',(player['id_member'],id_session)).fetchone()
+                if not other:candidates.append(player)
+            if present + len(candidates) > session['max_players']:
+                raise Problem('There are more absent players than the remaining session capacity.',409)
+            now=self.clock()
+            added=0
+            for player in candidates:
+                db.execute('''UPDATE roster SET attendance='present',checked_in_at=?,checked_out_at=NULL,is_late=?,
+                    base_rating=?,base_deviation=?,base_volatility=? WHERE id=?''',
+                    (now,now>session['starts_at']+15*60,player['base_rating'] if player['games_played'] else player['rating'],
+                     player['base_deviation'] if player['games_played'] else player['deviation'],
+                     player['base_volatility'] if player['games_played'] else player['volatility'],player['id']))
+                if player['membership']=='active' and player['waiver']=='valid':
+                    self.enqueue(db,id_session,player['id'])
+                added+=1
+            self.audit(db,id_session,'players.checked_in_all',{'players':added})
+        return added
 
     def demo(self, id_session, revision):
         with self.connect() as db:
@@ -268,6 +427,45 @@ class Engine:
         ticket = db.execute('UPDATE sessions SET next_ticket=next_ticket+1 WHERE id=? RETURNING next_ticket', (id_session,)).fetchone()[0]
         db.execute("UPDATE roster SET queue_state='waiting',ticket=?,queued_at=? WHERE id=?", (ticket, self.clock(), id_roster))
 
+    def pair_players(self, id_session, revision, id_a, id_b):
+        if type(id_a) is not int or type(id_b) is not int or id_a == id_b:
+            raise Problem('Choose two different players to pair.')
+        with self.transaction(id_session, revision) as (db, _session):
+            players = db.execute('SELECT id,queue_state FROM roster WHERE id_session=? AND id IN (?,?)',
+                                 (id_session, id_a, id_b)).fetchall()
+            if len(players) != 2:
+                raise Problem('Both players must be on this session roster.', 404)
+            if any(p['queue_state'] in ('assigned','playing') for p in players):
+                raise Problem('Resolve active court assignments before changing a pair.', 409)
+            occupied = db.execute('''SELECT 1 FROM team_pairs
+                WHERE id_session=? AND (id_player_a IN (?,?) OR id_player_b IN (?,?))''',
+                (id_session, id_a, id_b, id_a, id_b)).fetchone()
+            if occupied:
+                raise Problem('A selected player already has a partner. Unpair them first.', 409)
+            a, b = sorted((id_a, id_b))
+            db.execute('INSERT INTO team_pairs(id_session,id_player_a,id_player_b,created_at) VALUES(?,?,?,?)',
+                       (id_session, a, b, self.clock()))
+            self.audit(db, id_session, 'players.paired', {'players': [a, b]})
+
+    def unpair_player(self, id_session, revision, id_roster):
+        if type(id_roster) is not int:
+            raise Problem('Invalid player ID.')
+        with self.transaction(id_session, revision) as (db, _session):
+            player = db.execute('SELECT id,queue_state FROM roster WHERE id=? AND id_session=?',
+                                 (id_roster, id_session)).fetchone()
+            if not player:
+                raise Problem('Player not found.', 404)
+            if player['queue_state'] in ('assigned','playing'):
+                raise Problem('Resolve active court assignments before changing a pair.', 409)
+            pair = db.execute('''SELECT id_player_a,id_player_b FROM team_pairs
+                WHERE id_session=? AND (id_player_a=? OR id_player_b=?)''',
+                (id_session, id_roster, id_roster)).fetchone()
+            if not pair:
+                raise Problem('This player is not paired.', 409)
+            db.execute('DELETE FROM team_pairs WHERE id_session=? AND id_player_a=? AND id_player_b=?',
+                       (id_session, pair['id_player_a'], pair['id_player_b']))
+            self.audit(db, id_session, 'players.unpaired', {'players': [pair['id_player_a'], pair['id_player_b']]})
+
     def histories(self, db, id_session):
         partners, opponents = {}, {}
         local_roster = {p['id_member']:p['id'] for p in db.execute('SELECT id,id_member FROM roster WHERE id_session=?', (id_session,))}
@@ -287,34 +485,144 @@ class Engine:
         return partners, opponents
 
     def fill_courts(self, id_session, revision):
-        assigned, reasons = [], []
         with self.transaction(id_session, revision) as (db, session):
-            used = {g[0] for g in db.execute("SELECT court FROM games WHERE id_session=? AND status IN ('assigned','playing')", (id_session,))}
-            partners, opponents = self.histories(db, id_session)
-            for court in range(1, session['court_count']+1):
-                if court in used:
-                    continue
-                players = [dict(p) for p in db.execute('''SELECT r.id,r.ticket,r.games_played,m.rating,m.rated_games FROM roster r
-                    JOIN members m ON m.id=r.id_member WHERE r.id_session=? AND r.attendance='present'
-                    AND r.queue_state='waiting' AND r.membership='active' AND r.waiver='valid' ORDER BY r.ticket,r.id''', (id_session,))]
-                match = choose_game(players, partners, opponents)
-                if match is None:
-                    reasons.append(f'Court {court}: need four eligible players.' if len(players) < 4 else f'Court {court}: no balanced game includes the longest-waiting player. No one was skipped.')
-                    break
-                team_a, team_b = match['teams']
-                mean_a, mean_b = (sum(p['rating'] for p in t) / 2 for t in match['teams'])
+            return self.assign_courts(db, session, range(1, session['court_count']+1))
+
+    def assign_courts(self, db, session, courts, id_rebuild=None, excluded_teams=None):
+        id_session = session['id']
+        assigned, reasons = [], []
+        used = {g[0] for g in db.execute("SELECT court FROM games WHERE id_session=? AND status IN ('assigned','playing')", (id_session,))}
+        if not id_rebuild and session['mode']=='social_mix' and db.execute("SELECT 1 FROM games WHERE id_session=? AND status='assigned' LIMIT 1", (id_session,)).fetchone():
+            return {'assigned': [], 'messages': ['Social Mix: start the planned match before building the next mix.']}
+        partners, opponents = self.histories(db, id_session)
+        pair_map = {}
+        for pair in db.execute('SELECT id_player_a,id_player_b FROM team_pairs WHERE id_session=?', (id_session,)):
+            pair_map[pair['id_player_a']] = pair['id_player_b']
+            pair_map[pair['id_player_b']] = pair['id_player_a']
+        outcomes, last_courts = {}, {}
+        for row in db.execute('''SELECT g.id,g.court,g.score_a,g.score_b,gp.id_roster,gp.side FROM games g
+            JOIN game_players gp ON gp.id_game=g.id WHERE g.id_session=? AND g.status='completed'
+            ORDER BY g.id DESC''', (id_session,)):
+            if row['id_roster'] in outcomes:
+                continue
+            outcomes[row['id_roster']] = 'winner' if ((row['score_a'] > row['score_b']) == (row['side'] == 'a')) else 'loser'
+            last_courts[row['id_roster']] = row['court']
+        used_bands = set()
+        if session['mode'] == 'skill_courts':
+            active_bands = {}
+            for row in db.execute('''SELECT g.id,m.rating FROM games g
+                JOIN game_players gp ON gp.id_game=g.id
+                JOIN roster r ON r.id=gp.id_roster
+                JOIN members m ON m.id=r.id_member
+                WHERE g.id_session=? AND g.status IN ('assigned','playing')''', (id_session,)):
+                active_bands.setdefault(row['id'],set()).add(skill_band(row['rating']))
+            used_bands = {next(iter(values)) for values in active_bands.values() if len(values)==1}
+        for court in courts:
+            if court in used and not id_rebuild:
+                continue
+            players = [dict(p) for p in db.execute('''SELECT r.id,r.ticket,r.games_played,r.club_group,m.rating,m.rated_games,m.gender FROM roster r
+                JOIN members m ON m.id=r.id_member WHERE r.id_session=? AND r.attendance='present'
+                AND r.queue_state='waiting' AND r.membership='active' AND r.waiver='valid' ORDER BY r.ticket,r.id''', (id_session,))]
+            for player in players:
+                player['paired_with'] = pair_map.get(player['id'])
+                player['outcome'] = outcomes.get(player['id'])
+                last_court = last_courts.get(player['id'])
+                player['target_court'] = (max(1,last_court-1) if player['outcome']=='winner' else
+                                          min(session['court_count'],last_court+1) if player['outcome']=='loser' else None)
+            mode = session['mode']
+            candidate_sets = []
+            band = None
+            if mode in ('skill_separated','skill_courts'):
+                bands = ('Beginner','Intermediate','Advanced','Competitive')
+                by_band = {name:[p for p in players if skill_band(p['rating'])==name] for name in bands}
+                if mode == 'skill_separated':
+                    anchor_band = skill_band(players[0]['rating']) if players else None
+                    candidate_sets = [(by_band.get(anchor_band, []), 'balanced')]
+                else:
+                    available = [name for name in bands if len(by_band[name]) >= 4]
+                    unassigned = [name for name in available if name not in used_bands]
+                    band = max(unassigned or available, key=lambda name:len(by_band[name]), default=None)
+                    candidate_sets = [(by_band.get(band, []), 'balanced')] if band else []
+            elif mode == 'winners_losers':
+                anchor_outcome = players[0].get('outcome') if players else None
+                if anchor_outcome:
+                    outcomes_to_try = (anchor_outcome,)
+                elif not outcomes:
+                    outcomes_to_try = ('neutral',)
+                else:
+                    outcomes_to_try = ('winner','loser')
+                neutral = [p for p in players if p.get('outcome') is None]
+                candidate_sets = [([p for p in players if p.get('outcome')==result] + neutral, 'balanced')
+                                  for result in outcomes_to_try]
+                candidate_sets = [(pool, objective) for pool,objective in candidate_sets if len(pool)>=4]
+            elif mode == 'king_queen':
+                targeted = [p for p in players if p['target_court']==court]
+                neutral = [p for p in players if p['target_court'] is None]
+                candidate_sets = [(targeted+neutral if targeted else neutral, 'balanced')]
+            elif mode == 'club_wars':
+                anchor_group = players[0].get('club_group') if players else None
+                groups = sorted({p.get('club_group') for p in players if p.get('club_group')})
+                if anchor_group:
+                    for group in groups:
+                        if group != anchor_group:
+                            continue
+                        for opponent_group in (value for value in groups if value != group):
+                            candidate_sets.append(([p for p in players if p.get('club_group') in (group,opponent_group)], 'club_wars'))
+            else:
+                candidate_sets = [(players, mode)]
+            candidates = []
+            for pool, objective in candidate_sets:
+                match = choose_game(pool, partners, opponents, mode=objective, excluded_teams=excluded_teams)
+                if match is not None:
+                    candidates.append(match)
+            match = min(candidates, key=lambda item:item['key']) if candidates else None
+            if match is None:
+                if mode == 'mixed_doubles':
+                    detail = 'needs two players who self-identified as men and two as women.'
+                elif mode == 'club_wars':
+                    groups = {p.get('club_group') for p in players if p.get('club_group')}
+                    detail = ('needs every player assigned to Group A or Group B.' if any(not p.get('club_group') for p in players) or len(groups)<2
+                              else 'has no valid team split with the current partner preferences.')
+                elif mode in ('skill_courts','skill_separated'):
+                    detail = 'needs four checked-in players in the same skill band.'
+                elif mode == 'winners_losers':
+                    detail = 'needs four available players from a winners or losers group.'
+                elif mode == 'king_queen':
+                    detail = 'needs four players at this court level.'
+                else:
+                    detail = 'needs four eligible players.'
+                reasons.append(f'Court {court}: {detail}' if len(players) >= 4 else f'Court {court}: need four eligible players.')
+                break
+            team_a, team_b = match['teams']
+            mean_a, mean_b = (sum(p['rating'] for p in t) / 2 for t in match['teams'])
+            reason = {'social_mix':'Social Mix: rotates partners first and avoids recent opponent repeats; ratings are not used.',
+                      'skill_separated':f'Skill Separated: {skill_band(team_a[0]["rating"])} players only.',
+                      'winners_losers':'Winners / Losers: same recent-result group, with newcomers allowed to join.',
+                      'mixed_doubles':'Mixed Doubles: one self-identified man and woman on each team.',
+                      'club_wars':'Club Wars: each team represents one player group.',
+                      'king_queen':f'King/Queen: court {court} promotion and demotion rotation.'}.get(mode,
+                      f'Skill Courts: {band} group.' if mode=='skill_courts' else match['reason'])
+            if id_rebuild:
+                id_game = id_rebuild
+                db.execute('''UPDATE games SET assigned_at=?,mean_a=?,mean_b=?,expected_a=?,cost=?,reason=? WHERE id=?''',
+                           (self.clock(), mean_a, mean_b, match['expected'], match['cost'], reason, id_game))
+            else:
                 id_game = db.execute('''INSERT INTO games(id_session,court,assigned_at,mean_a,mean_b,expected_a,cost,reason)
-                    VALUES(?,?,?,?,?,?,?,?)''', (id_session, court, self.clock(), mean_a, mean_b, match['expected'], match['cost'], match['reason'])).lastrowid
-                for side, team in (('a', team_a), ('b', team_b)):
-                    for p in team:
-                        member = db.execute('''SELECT m.* FROM members m JOIN roster r ON r.id_member=m.id WHERE r.id=?''', (p['id'],)).fetchone()
-                        db.execute('INSERT INTO active_assignments(id_roster,id_game) VALUES(?,?)', (p['id'], id_game))
-                        db.execute('INSERT INTO game_players(id_game,id_roster,side,rating,deviation,volatility) VALUES(?,?,?,?,?,?)',
-                                   (id_game, p['id'], side, member['rating'], member['deviation'], member['volatility']))
-                        db.execute("UPDATE roster SET queue_state='assigned' WHERE id=?", (p['id'],))
-                assigned.append(id_game)
-            if assigned:
-                self.audit(db, id_session, 'courts.assigned', {'games': assigned})
+                    VALUES(?,?,?,?,?,?,?,?)''', (id_session, court, self.clock(), mean_a, mean_b, match['expected'], match['cost'], reason)).lastrowid
+            for side, team in (('a', team_a), ('b', team_b)):
+                for p in team:
+                    member = db.execute('''SELECT m.* FROM members m JOIN roster r ON r.id_member=m.id WHERE r.id=?''', (p['id'],)).fetchone()
+                    db.execute('INSERT INTO active_assignments(id_roster,id_game) VALUES(?,?)', (p['id'], id_game))
+                    db.execute('INSERT INTO game_players(id_game,id_roster,side,rating,deviation,volatility) VALUES(?,?,?,?,?,?)',
+                               (id_game, p['id'], side, member['rating'], member['deviation'], member['volatility']))
+                    db.execute("UPDATE roster SET queue_state='assigned' WHERE id=?", (p['id'],))
+            assigned.append(id_game)
+            if band:
+                used_bands.add(band)
+            if mode == 'social_mix':
+                break
+        if assigned and not id_rebuild:
+            self.audit(db, id_session, 'courts.assigned', {'games': assigned})
         return {'assigned': assigned, 'messages': reasons}
 
     def game_action(self, id_session, revision, id_game, action, data=None):
@@ -346,6 +654,28 @@ class Engine:
                         self.enqueue(db, id_session, p['id'])
                     else:
                         db.execute("UPDATE roster SET queue_state='off',ticket=NULL,queued_at=NULL WHERE id=?", (p['id'],))
+            elif action == 'swap_winner':
+                if game['status'] != 'completed':
+                    raise Problem('Only completed games have a winner to correct.', 409)
+                db.execute('UPDATE games SET score_a=?,score_b=? WHERE id=?',
+                           (game['score_b'], game['score_a'], id_game))
+                self.audit(db, id_session, 'game.winner_swapped', {
+                    'id_game': id_game, 'before': [game['score_a'], game['score_b']],
+                    'after': [game['score_b'], game['score_a']]})
+            elif action == 'rebuild':
+                if game['status'] != 'assigned':
+                    raise Problem('Only an unstarted Up Next game can be rebuilt.', 409)
+                old_teams = [tuple(row['id_roster'] for row in db.execute(
+                    'SELECT id_roster FROM game_players WHERE id_game=? AND side=? ORDER BY id_roster',
+                    (id_game, side))) for side in ('a', 'b')]
+                db.execute('DELETE FROM active_assignments WHERE id_game=?', (id_game,))
+                db.execute('DELETE FROM game_players WHERE id_game=?', (id_game,))
+                db.execute("UPDATE roster SET queue_state='waiting' WHERE id IN (?,?,?,?)",
+                           tuple(p['id'] for p in players))
+                result = self.assign_courts(db, session, [game['court']], id_game, old_teams)
+                if not result['assigned']:
+                    raise Problem('No alternative valid matchup available. The existing Up Next plan was kept.', 409)
+                self.audit(db, id_session, 'game.rebuilt', {'id_game': id_game, 'previous_teams': old_teams})
             elif action == 'cancel':
                 if game['status'] not in ('assigned','playing'):
                     raise Problem('This game is already finished.', 409)
@@ -357,7 +687,7 @@ class Engine:
                 self.audit(db, id_session, 'game.cancelled', {'id_game': id_game, 'reason': reason})
             else:
                 raise Problem('Unknown game action.')
-            if action != 'cancel':
+            if action not in ('cancel', 'swap_winner', 'rebuild'):
                 self.audit(db, id_session, f'game.{action}', {'id_game': id_game})
 
     def reconcile(self, id_session, revision):

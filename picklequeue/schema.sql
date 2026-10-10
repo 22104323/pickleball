@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   starts_at REAL NOT NULL,
   court_count INTEGER NOT NULL CHECK (court_count BETWEEN 1 AND 8),
   max_players INTEGER NOT NULL CHECK (max_players BETWEEN 4 AND 200),
+  mode TEXT NOT NULL DEFAULT 'balanced' CHECK (mode IN ('balanced','social_mix','skill_separated','winners_losers','skill_courts','mixed_doubles','king_queen','club_wars')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','closed')),
   revision INTEGER NOT NULL DEFAULT 0,
   next_ticket INTEGER NOT NULL DEFAULT 0,
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS members (
   club_key TEXT NOT NULL,
   external_id TEXT NOT NULL,
   name TEXT NOT NULL,
+  gender TEXT CHECK (gender IN ('M','F')),
   rating REAL NOT NULL DEFAULT 1200 CHECK (rating BETWEEN 0 AND 4000),
   deviation REAL NOT NULL DEFAULT 350 CHECK (deviation > 0),
   volatility REAL NOT NULL DEFAULT 0.06 CHECK (volatility > 0),
@@ -38,6 +40,7 @@ CREATE TABLE IF NOT EXISTS roster (
   ticket INTEGER,
   queued_at REAL,
   games_played INTEGER NOT NULL DEFAULT 0,
+  club_group TEXT,
   base_rating REAL NOT NULL,
   base_deviation REAL NOT NULL,
   base_volatility REAL NOT NULL,
@@ -74,6 +77,16 @@ CREATE TABLE IF NOT EXISTS active_assignments (
   id_roster INTEGER PRIMARY KEY REFERENCES roster(id),
   id_game INTEGER NOT NULL REFERENCES games(id)
 );
+CREATE TABLE IF NOT EXISTS team_pairs (
+  id_session INTEGER NOT NULL REFERENCES sessions(id),
+  id_player_a INTEGER NOT NULL REFERENCES roster(id),
+  id_player_b INTEGER NOT NULL REFERENCES roster(id),
+  created_at REAL NOT NULL,
+  CHECK (id_player_a < id_player_b),
+  UNIQUE (id_session,id_player_a,id_player_b)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS one_pair_per_player_a ON team_pairs(id_session,id_player_a);
+CREATE UNIQUE INDEX IF NOT EXISTS one_pair_per_player_b ON team_pairs(id_session,id_player_b);
 CREATE TABLE IF NOT EXISTS rating_history (
   id INTEGER PRIMARY KEY,
   id_session INTEGER NOT NULL REFERENCES sessions(id),
@@ -95,4 +108,4 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS roster_session ON roster(id_session,queue_state,ticket);
 CREATE INDEX IF NOT EXISTS games_session ON games(id_session,status);
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;

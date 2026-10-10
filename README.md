@@ -15,15 +15,15 @@ are no runtime packages to install and no build step.
 
 | Available now | Pending |
 | --- | --- |
-| Session creation, court count, and player capacity | Supported Reclub API/webhook contract and live sync |
-| Organizer-prepared CSV import with stable external identities | Verified Reclub export format and upstream write-back |
+| Session creation, court count, capacity, and eight play modes | Supported Reclub API/webhook contract and hosted live sync |
+| Pasted player lists and a local read-only preview for public Reclub event links | Verified Reclub export format and upstream write-back |
 | Separate RSVP, attendance, eligibility, and queue states | Payments, guests, division policies, and notification integrations |
 | Manual check-in, late-arrival tracking, pause, rejoin, and check-out | Attendance reliability rewards and approved future-session penalties |
-| Transactional balanced assignment, explicit game starts, and results | Winner-stays, ladder mode, and multi-court swap optimization |
+| Transactional mode-aware court assignment, partner preferences, starts, corrections, and Rebuild | Winner-stays, manual match editing, and multi-court swap optimization |
 | Recent partner/opponent costs and a small first-game newcomer bonus | Full fairness dashboard and calibrated match-quality metrics |
 | Session-close Glicko-2 periods, rating history, and audit records | Empirical validation of the individual doubles adaptation |
-| Responsive organizer interface and reduced-motion support | Hosted organizer authentication, authorization, and multi-organizer access |
-| GitHub review rules, CI checks, and a gated Vercel deployment workflow | Vercel connection and reviewed read-only Reclub website adapter |
+| Responsive organizer interface, local Live View, and reduced-motion support | Hosted organizer authentication, authorization, and multi-organizer access |
+| GitHub review rules, CI checks, and a gated Vercel deployment workflow | Vercel connection, hosted Reclub endpoint, and hosted organizer access controls |
 
 ## Contributions and deployment
 
@@ -85,21 +85,26 @@ contract. [Reclub product overview](https://reclub.co/)
 
 A supported developer contract, webhook event names, authentication scheme, pagination,
 rate limits, check-in endpoints, and write-back permissions have not been verified.
-The app does not call guessed endpoints, scrape accounts, or send data upstream.
-The CSV below is **this engine's input format**, not a claimed Reclub export.
+The local app offers an optional, read-only preview that calls the observed public
+`/meets/by-ref/{referenceCode}` and batch profile endpoints. It accepts only HTTPS
+links on `reclub.co`, uses fixed API paths, and never asks for Reclub credentials.
+This is a compatibility adapter, not an official or guaranteed integration. It does
+not scrape HTML or send changes upstream. The CSV below is **this engine's input
+format**, not a claimed Reclub export.
 
 A read-only compatibility check on 2026-10-10 verified the supplied public
 `/meets/by-ref/{referenceCode}`, batch profile, and group activity endpoints. This
-is evidence for a future attendee mirror, not a completed integration or a service
+supports the local event preview, not a completed hosted integration or a service
 guarantee. The supplied club-slug endpoint returned 404. The participant records
 did not contain an explicit check-in field; sign-ups must not become automatic
-physical attendance. Guest slots must remain distinct from the inviter's profile.
-The user prefers this live read-only approach over CSV and a duplicate member database.
-The hosted adapter is pending; see [the observed response shape and plan](docs/deployment.md).
+physical attendance. Guest slots remain separate from an inviter's profile. Review
+the roster before adding it; only selected player names, IDs, and optional organizer
+fields are written to this computer's SQLite session database. The hosted adapter
+is pending; see [the observed response shape and plan](docs/deployment.md).
 
 | Concept | Current representation | Authority |
 | --- | --- | --- |
-| Member | `members` keyed by source, club identifier, external ID | Imported stable Reclub ID when available; no email-based merges |
+| Member | Local `members` keyed by source, club identifier, external ID | Reclub remains upstream identity authority; no email-based merges |
 | Event | Local `sessions` with start instant, courts, and capacity | Organizer-entered for this MVP; external event mapping pending |
 | RSVP | `roster.rsvp` | Imported intent; never equivalent to presence |
 | Check-in | `roster.checked_in_at` and attendance | Local organizer observation until a verified upstream check-in exists |
@@ -111,6 +116,12 @@ If upstream check-in is unavailable, local attendance is a clearly identified
 operational record. The app must not claim that Reclub confirmed it. Payment,
 waiver, membership-expiry, and notification fields must be verified independently
 before treating them as available upstream facts.
+
+The public preview includes account profiles when available and named guest slots
+when the observed event response supplies a guest name. Unnamed guests are labelled
+for organizer review; they are not represented as the inviting member. No avatars,
+phone numbers, or email addresses are copied. RSVP records are imported as absent
+and remain out of the queue until an organizer checks players in.
 
 ### CSV input
 
@@ -220,10 +231,59 @@ first 12 waiting players and all three unique 2v2 splits of each four-person set
 If none is acceptable, expand once to the first 16. Four played players are removed
 before the next court is assigned. Ties are deterministic.
 
+### Play modes and partner preferences
+
+Session setup offers Balanced, Social Mix, Skill Separated, Winners / Losers,
+Skill Courts, Mixed Doubles, King/Queen, and Club Wars. Each court fill still
+requires four present and eligible players. Social Mix scores recent partner and
+opponent repetition without using ratings. Skill modes restrict candidate pools
+to one configured rating band. Mixed Doubles requires two organizer-confirmed
+men and two women, one of each on each team; names are never used to infer a
+category. Club Wars requires organizer-assigned groups and puts one group on each
+side. Winners / Losers uses each player's most recent completed result, while
+King/Queen moves winners toward court 1 and losers toward higher-numbered courts.
+
+The roster review screen supports selected players, name edits, optional skill
+levels, and partner preferences. A chosen pair is kept together as a hard team
+constraint; the second player can be included beyond the normal candidate window
+when needed. If that conflicts with the selected play mode or no other valid
+match exists, the court stays open with an explanation. Attendance also offers
+pair/unpair controls. “Check in all” affects RSVP-yes players only; each check-in
+is still local organizer-recorded presence. Approximate DUPR labels map to this
+engine's 1000–1800 rating scale and are not official DUPR conversions.
+
 The engine protects the oldest player rather than indefinitely selecting other
 easy-to-balance groups. If no acceptable game includes them, it reports the reason
 and leaves the court unassigned. The organizer can arrange a suitable pool or
 explicitly pause a player; the engine does not silently demote them.
+
+### Result corrections, Up Next, and Live View
+
+Assigned games are this engine's reserved Up Next plans: each holds one open court
+and four eligible players until explicitly started or cancelled. In **Game results**,
+**Swap winner** opens inline **Cancel** / **Swap** controls. Cancel does not write
+anything. Swap exchanges the two recorded scores in the same game and audits their
+before/after values. Match number, court, completion time, total game count, games
+played, queue tickets, and existing reserved teams stay unchanged.
+
+**Live Standings** derive wins/losses from completed results and update immediately.
+The most recent winner/loser labels also reflect corrections. A staged plan's labels
+can therefore change while its teams remain reserved. **Rebuild** is a separate,
+explicit action on an unstarted game. It reuses the same mode-aware assignment
+engine with corrected history, includes the released players at their existing wait
+priority, and excludes the previous team split. Other courts remain reserved. If no
+alternative valid game exists, the entire change rolls back, keeping the old plan
+and revision. Rebuild neither starts a game nor relaxes eligibility, pairing, balance,
+or division constraints. Completed or playing games cannot be rebuilt.
+
+Corrections are available only while the session is active. Ratings remain frozen
+until close, when the corrected scores supply the single Glicko-2 period. Closed
+sessions are read-only; reopening and replaying finalized ratings remain pending.
+
+**Live View** displays courts and standings without court mutation controls. It is
+an organizer presentation view on this computer, not a club/cloud sharing service
+or a separate authorization boundary. It refreshes from the local server using the
+same polling lifecycle as the workspace.
 
 ### Rating scale and cost
 
@@ -348,11 +408,15 @@ cross-origin JSON changes and unknown Host headers. It does not log request payl
 | `GET /api/sessions` | List local sessions |
 | `POST /api/sessions` | Create a session |
 | `GET /api/sessions/{id}` | Consistent session, roster, games, summary, recent audit snapshot |
+| `POST /api/reclub/preview` | Read-only preview of a public Reclub meet link; no data is saved by preview alone |
 | `POST /api/sessions/{id}/import` | Validate and import the engine's CSV format |
+| `POST /api/sessions/{id}/import-reviewed` | Add selected reviewed players and partner preferences |
 | `POST /api/sessions/{id}/demo` | Load synthetic players into an empty session |
+| `POST /api/sessions/{id}/checkin-all` | Check in RSVP-yes players who are not already present |
 | `POST /api/sessions/{id}/player` | Check-in, eligibility change, pause, resume, check-out |
+| `POST /api/sessions/{id}/pair` | Add or remove a teammate preference |
 | `POST /api/sessions/{id}/fill` | Fill available courts with valid balanced games |
-| `POST /api/sessions/{id}/game` | Start, complete, or cancel a game |
+| `POST /api/sessions/{id}/game` | Start, complete, cancel, swap a completed winner, or rebuild an unstarted game |
 | `POST /api/sessions/{id}/reconcile` | Classify absent RSVP-yes players after the no-show cutoff |
 | `POST /api/sessions/{id}/close` | End the rotation and finalize a rating period |
 
@@ -452,9 +516,9 @@ LICENSE
 
 ## Next development steps
 
-Keep the boundary simple: Reclub supplies verified roster/event facts, the engine
-owns the queue, and completed play supplies rating evidence. Next confirm the
-Reclub contract and the intended hosting/access model; then add read-only sync
-and reconciliation before any upstream write-back. Competitive modes, penalties,
-advanced metrics, calendar inactivity, and rating calibration remain distinct,
-reviewable increments.
+Keep the boundary simple: Reclub supplies event sign-ups, the organizer reviews
+them and confirms physical attendance, the engine owns the queue, and completed
+play supplies rating evidence. Next verify a supported Reclub contract and the
+intended hosting/access model before connecting Vercel. Multi-organizer live sync,
+manual match editing, advanced metrics, penalties, calendar inactivity, and rating
+calibration remain separate increments.

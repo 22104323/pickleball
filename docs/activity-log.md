@@ -141,3 +141,68 @@
   connections are instance-bound/duration-limited and shared realtime state needs a
   cross-instance design. This does not make Reclub push events available. The referenced
   Next.js/Postgres/Prisma/Tailwind/Zustand stack has not been adopted or installed.
+
+
+## 2026-10-10 — Dropdown styling
+
+- Polished the existing native dropdown controls with a consistent Courtside chevron,
+  responsive hover/focus/disabled styling, and compact spacing for attendance fields.
+  Kept native select behavior for keyboard access and platform picker support. The
+  referenced skill-level dropdown is not present in the current interface.
+- Verification: source diff reviewed and whitespace check passed. No browser inspection
+  or automated tests were run for this CSS-only update.
+
+
+## 2026-10-10 — Courtside roster, modes, and result corrections
+
+- Integrated the earlier local work for optional Guide me, eight play formats,
+  pasted/public-Reclub roster review, bulk skill priors, pairing/unpairing, and
+  organizer check-in-all. SQLite version 2 retains version-1 data; its migration
+  is covered by the existing regression test. Reclub remains read-only and RSVPs
+  remain absent until organizer check-in. No new runtime dependencies or stack change.
+- Implemented inline Swap winner / Cancel / Swap for completed games in active
+  sessions. Exchanges scores and audits before/after values without changing game
+  identity, court, completion time, count, games played, queue tickets, or staged teams.
+  Closed sessions stay read-only; corrected results are rated once at session close.
+- Added result-derived Live Standings and a local display view. Explicit Rebuild
+  reuses mode-aware selection, preserves other courts and original queue priority,
+  and atomically keeps the old plan when no alternative exists. Corrected recent
+  outcome labels can change independently of the reserved teams.
+- Preserved rating priors on reviewed reimport and rejected pair/category/group
+  changes affecting active games. Mixed Doubles handles unset categories as an
+  invalid pool instead of a comparison error. These checks keep review imports
+  from bypassing the existing pairing and game rules.
+- Reused shared CSS motion settings for 700ms/28px/80ms initial reveals, 260ms
+  incoming views and guide text, restrained button feedback, and desktop-only
+  elastic format cards. IntersectionObserver reveals once; reduced motion and
+  missing-observer fallback show content immediately. No added decorative assets.
+- Verification: 67 unittest tests passed; compileall and Node 24.21.0 syntax checks
+  passed. Expanded Playwright Core / Chromium smoke passed desktop, 390px mobile
+  touch targets, Back/Forward, reload, optional guide, score validation, inline
+  cancellation/correction, standings, preserved staged games, Rebuild, local display,
+  reduced motion, missing IntersectionObserver, keyboard dialog focus, rating close,
+  unknown eligibility, and HTML escaping. Used an isolated temporary SQLite database.
+- REA Chromium 150.0.7871.124 desktop evidence:
+  `ev_affd32038f6fb5037b6f7d7d41af30610472fbf33785b425fa3007c43cf3a991`.
+  Confirmed Cancel and corrected standings after three synthetic games; all four
+  games-played values remained 3. Mobile viewport/reduced-motion Winners / Losers:
+  `ev_7a0a06c570db50f70437929b4ee1d02dfc4688f7ad72ecbf9e4e9c979c407ce2`.
+  Staged teams stayed fixed after swap; explicit Rebuild used corrected outcome groups.
+  Both completed without page-error events; owned browser processes were terminated.
+- Failed exploratory REA run `ev_55131d32e397f52c007ffcde8188e841067fc7c8a96035d89419d3fa4eb59a43`
+  used a non-unique wait selector; subsequent actions were cancelled. Corrected it
+  before the successful desktop run. One smoke rerun read attendance before the
+  request completed; replaced that check with a wait for visible present status,
+  then the suite passed. Repeating the test on that same synthetic database later
+  correctly blocked its reused member identity from joining a second active session.
+  Added a unique synthetic external ID and used a fresh database for the final run.
+  No failed step is treated as positive evidence.
+- Read GitHub back: active rulesets 24824359 and 24824739 protect develop/staging/main,
+  one approval, code-owner review when CODEOWNERS exists on the base, last-push approval,
+  resolved threads, verify, force/deletion blocks, and no bypass actors. Secret scanning,
+  push protection, and owner-approved staging/production environments remain enabled.
+  Feature PR #2 still needs an independent reviewer; no protected branch was changed.
+- Remaining: Vercel connection/hosted Reclub adapter, club/cloud/multi-device behavior,
+  Safari/Firefox/physical-device verification, automated browser CI, and the 90% coverage
+  target are unfinished. Dynamic court management, manual team editing, and independent
+  future-match slots beyond one reservation per free court remain separate increments.
