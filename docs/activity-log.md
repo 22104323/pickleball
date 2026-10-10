@@ -405,3 +405,15 @@
   must select the actual public event and approve publishing its names/avatar URLs, set
   the Vercel event reference, complete source review, and then use the existing protected
   staging and production gates. No Vercel deployment was performed.
+
+
+## 2026-10-10 — Protected release and deployment gate
+
+- Public PR #7 merged to protected `main` at `3cceb545fcf2d129511cb644e8f7f2e55b0c3bb6`.
+  The post-merge deployment checks passed, but run 38027817966 is still waiting at the
+  `production` GitHub environment approval gate.
+- The GitHub production environment has no `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, or
+  `VERCEL_WEBSITE_READY` setting. No Vercel project connection or `RECLUB_EVENT_REF`
+  was verified. The hosted page is not live; do not approve this run until those settings,
+  event selection, and public attendee-display approval are complete.
+- No live Vercel runtime, Reclub feed, or production page check was performed.
