@@ -11,29 +11,28 @@
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to session</a>
-  <aside class="sidebar">
-    <a class="brand" href="/" aria-label="Courtside home"><span class="brand-mark" aria-hidden="true">C</span><span>courtside<span class="brand-caption">PICKLEBALL ROTATION</span></span></a>
-    <div class="sidebar-label">Your session</div>
-    <label class="sr-only" for="session-select">Choose session</label>
-    <select id="session-select"><option value="">No sessions yet</option></select>
-    <nav aria-label="Session navigation">
-      <button class="nav-link active" data-view="queue"><span aria-hidden="true">▦</span> Live queue <span id="nav-count" class="count">0</span></button>
-      <button class="nav-link" data-view="attendance"><span aria-hidden="true">◎</span> Attendance</button>
-      <button class="nav-link" data-view="results"><span aria-hidden="true">↗</span> Game results</button>
-      <button class="nav-link" data-view="live"><span aria-hidden="true">▣</span> Live View</button>
-      <button class="nav-link" data-view="activity"><span aria-hidden="true">≡</span> Activity</button>
-    </nav>
-    <button class="btn btn-outline sidebar-new" data-open="create-dialog">+ New session</button>
-    <div class="sidebar-bottom"><span class="local-dot" aria-hidden="true"></span><strong>Local organizer workspace</strong><p>Roster in. Fair games out.</p><p class="muted">Read-only Reclub preview available.<br>Check in players when they arrive.</p></div>
-  </aside>
+  <header class="session-header">
+    <div class="header-row">
+      <details class="header-menu"><summary aria-label="Session navigation menu">☰</summary><nav aria-label="Session navigation">
+        <button class="nav-link active" data-view="queue">Live queue <span id="nav-count" class="count" aria-hidden="true">0</span></button>
+        <button class="nav-link" data-view="attendance">Attendance</button>
+        <button class="nav-link" data-view="results">Game results</button>
+        <button class="nav-link" data-view="live">Live View</button>
+        <button class="nav-link" data-view="activity">Activity</button>
+      </nav></details>
+      <a class="brand" href="/" aria-label="Courtside home"><span class="brand-mark" aria-hidden="true">C</span><span>courtside</span></a>
+      <div class="header-session"><label class="sr-only" for="session-select">Choose session</label><select id="session-select"><option value="">No sessions yet</option></select></div>
+      <div class="header-actions"><button class="btn btn-outline" id="import-button" data-open="import-dialog" disabled>Import roster</button><button class="btn btn-outline" data-open="create-dialog">+ New session</button></div>
+    </div>
+    <div id="summary" class="summary" aria-label="Session summary"></div>
+  </header>
   <div class="main-shell">
-    <header class="topbar"><span>Open play <span class="crumb">/</span> <span id="breadcrumb">Your session</span></span><span class="operator-badge">Organizer</span></header>
     <main id="workspace" tabindex="-1">
       <noscript><div class="notice">Enable JavaScript to operate the session workspace. Saved records remain in the local database.</div></noscript>
       <div id="error" class="error-banner" role="alert" hidden></div>
       <div id="notice" class="notice" role="status" hidden></div>
-      <section class="page-heading"><div><div class="eyebrow" id="session-date">YOUR NEXT OPEN PLAY</div><h1 id="session-title">Keep the next game fair.</h1><p id="session-subtitle">Check in your players. Let the queue take it from there.</p></div><div class="heading-actions"><button class="btn btn-outline" id="import-button" data-open="import-dialog" disabled>Import roster</button><button class="btn btn-primary" id="fill-button" data-action="fill" disabled>Fill open courts <span aria-hidden="true">↗</span></button></div></section>
-      <div id="summary" class="summary" aria-label="Session summary"></div>
+      <section class="page-heading"><div><div class="eyebrow" id="session-date">YOUR NEXT OPEN PLAY</div><h1 id="session-title">Keep the next game fair.</h1><p id="session-subtitle">Check in your players. Let the queue take it from there.</p></div></section>
+      <div class="workspace-actions"><button class="btn btn-primary" id="fill-button" data-action="fill" disabled>Fill open courts <span aria-hidden="true">↗</span></button></div>
       <section id="view-content" aria-label="Session workspace"></section>
       <footer class="workspace-footer"><span>Attendance drives the queue. Balance shapes the game.</span><span id="updated-label">Stored on this computer</span></footer>
     </main>

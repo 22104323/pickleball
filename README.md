@@ -77,6 +77,15 @@ to finalize ratings.
 
 On mobile, **+ New session** is also available in the session dropdown.
 
+The session workspace uses a compact top header with a navigation menu and session
+selector. Live Courts appear above the rotation: the ordered Queue sits on the left,
+with separate numbered Up Next cards beside it. Queue rows include reserved players
+until their game starts; the occupied-court counter counts only games actually playing.
+Use **Start Up Next** on a court or **Send to Court** on its reserved card to start it.
+On narrow screens, Up Next appears before the queue. There is one reserved plan per
+available court, not an independent list of future matches. Manual team editing,
+dynamic court management, and player-call controls remain pending.
+
 ## Reclub ownership and integration boundary
 
 Reclub is the intended source of truth for club identity, event details, and

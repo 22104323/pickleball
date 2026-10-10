@@ -249,3 +249,48 @@
 - Not verified: Safari, Firefox, physical devices, screen readers, club/cloud sharing,
   hosted Reclub, and Vercel deployment. Existing hosted integration and independent
   future-match/court-management work remains pending.
+
+
+## 2026-10-10 — Reference court, queue, and Up Next layout (#1, sprint unassigned)
+
+- Corrected the structural mismatch with the supplied PickleQ screenshot: replaced
+  the permanent sidebar and large metric cards with a compact session header/menu,
+  placed Live Courts above the rotation, and put an ordered Queue beside separate
+  numbered Up Next cards. Retained Courtside's palette, typography, native enhanced
+  dropdowns, skills-only review, attendance gates, and explicit winner buttons.
+- Queue rows now include waiting and reserved players until their game starts;
+  reservations are labelled and cannot be paused without resolving their match.
+  The header's occupied-court count includes playing games only. Court previews
+  expose Start Up Next; the matching card exposes Send to Court, Rebuild, and Cancel,
+  using existing actions. Outcome group badges require every player to share a known
+  outcome. No engine, schema, dependency, hosting, or GitHub permission change.
+- Menu navigation retains browser history and keyboard focus; Escape closes the menu
+  and restores its trigger. Header counters remain stable during content transitions.
+  Mobile stacks Up Next before the queue, with existing reduced-motion behavior.
+- Verification: 68 existing unittest tests passed. Expanded Chromium 150.0.7871.124
+  browser smoke passed desktop/mobile, menu Escape, queue/card geometry, counts,
+  winner buttons, correction/Cancel, standings, reserved teams, Rebuild, Back/Forward,
+  reload, reduced motion, missing IntersectionObserver, review skills, dialog focus,
+  unknown eligibility, and HTML escaping. Additional fresh-context checks covered
+  bulk/individual skills, pairing, enhanced picker/Escape, mobile review/attendance,
+  eligibility, and Team 2 Wins. No page errors or body overflow in successful runs.
+- A separate fresh one-court, nine-player Winners / Losers scenario used equal-skill
+  synthetic CSV fixtures through the existing local API, then organizer UI check-ins,
+  starts, and three winner-button results. Verified desktop geometry, mobile width,
+  four changed win totals after correction, unchanged games-played counts, completed
+  match count, and the full staged game. Saved fresh reference and winner screenshots.
+  These checks establish local browser behavior only, not club/cloud behavior.
+- Initial menu test timed out because its accessible name included the queue count;
+  marked the decorative count aria-hidden and reran successfully. The exploratory
+  varied-rating demo could not form a valid later Winners / Losers game; retained its
+  balance constraints and used equal-skill fixtures for the controlled scenario.
+  Two fixture retries read the URL before navigation completed; another asserted
+  queue rows before view rendering. Added explicit navigation/render waits before
+  the successful scenario. Failed steps are not treated as positive evidence.
+- Manual team editing, player-call controls, adding/removing courts, and independent
+  future-match slots remain pending; Up Next still reserves one game per free court.
+  Not verified: Safari/Firefox, physical devices, screen readers, cloud sharing,
+  hosted Reclub, Vercel deployment, browser CI, or the 90% coverage target.
+- Compileall, Node 24 syntax, whitespace, staged repository, and history safety checks
+  passed. Read back both active GitHub rulesets: review/check requirements, force/deletion
+  blocks, and empty bypass actor lists remain in effect for develop, staging, and main.
