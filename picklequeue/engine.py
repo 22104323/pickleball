@@ -642,8 +642,16 @@ class Engine:
             elif action == 'complete':
                 if game['status'] != 'playing':
                     raise Problem('Start the game before recording its result.', 409)
-                score_a = integer(data.get('score_a'), 'Team A score', 0, 99)
-                score_b = integer(data.get('score_b'), 'Team B score', 0, 99)
+                if 'winner' in data:
+                    if data['winner'] not in ('a', 'b'):
+                        raise Problem('Choose Team 1 or Team 2 as the winner.')
+                    if 'score_a' in data or 'score_b' in data:
+                        raise Problem('Submit a winner or scores, not both.')
+                    # Legacy columns hold binary outcome indicators, not invented point scores.
+                    score_a, score_b = (1, 0) if data['winner'] == 'a' else (0, 1)
+                else:
+                    score_a = integer(data.get('score_a'), 'Team A score', 0, 99)
+                    score_b = integer(data.get('score_b'), 'Team B score', 0, 99)
                 if score_a == score_b:
                     raise Problem('A completed doubles game needs a winner.')
                 db.execute("UPDATE games SET status='completed',score_a=?,score_b=?,completed_at=? WHERE id=?", (score_a, score_b, self.clock(), id_game))
@@ -688,7 +696,10 @@ class Engine:
             else:
                 raise Problem('Unknown game action.')
             if action not in ('cancel', 'swap_winner', 'rebuild'):
-                self.audit(db, id_session, f'game.{action}', {'id_game': id_game})
+                detail = {'id_game': id_game}
+                if action == 'complete' and 'winner' in data:
+                    detail.update(winner=data['winner'], result_type='winner_only')
+                self.audit(db, id_session, f'game.{action}', detail)
 
     def reconcile(self, id_session, revision):
         with self.transaction(id_session, revision) as (db, session):

@@ -9,7 +9,6 @@ let view = 'queue';
 let busy = false;
 let loadSequence = 0;
 let confirmAction = null;
-let resultGame = null;
 let swapConfirmation = null;
 let searchTerm = '';
 const views = ['queue','attendance','results','activity','live'];
@@ -61,7 +60,24 @@ function ratingLevel(rating) {
   return levelOptions.find(([value])=>Number(value)===Number(rating))?.[0] || '';
 }
 
+function updateSkillSummary() {
+  const levels = new Set(reviewDraft.filter(player=>player.selected).map(player=>player.rating));
+  const rating = [...levels][0];
+  const label = levels.size > 1 ? 'Mixed levels' : rating == null ? 'No level set' : levelOptions.find(([value])=>Number(value)===Number(rating))?.[1] || `${rating} rating`;
+  $('#review-bulk-level option[value="noop"]').textContent = label;
+}
+
+function skillStars(rating) {
+  const count = levelOptions.findIndex(([value])=>value===ratingLevel(rating))+1;
+  return `<span class="skill-stars" aria-hidden="true"><span>${'★'.repeat(count)}</span>${'★'.repeat(6-count)}</span>`;
+}
+
 function renderReview() {
+  const list=$('#review-player-list');
+  const scrollTop=list.scrollTop;
+  const active=document.activeElement;
+  const focusAttribute=list.contains(active) && ['data-review-select','data-review-name','data-review-pair','data-review-unpair','data-review-remove'].find(attribute=>active.hasAttribute(attribute));
+  const focusValue=focusAttribute && active.getAttribute(focusAttribute);
   const selected=reviewDraft.filter(player=>player.selected).length;
   $('#review-title').textContent='Review players';
   $('#review-count').textContent=`${selected} player${selected===1?'':'s'} selected${reviewEventName?` · ${reviewEventName}`:''}`;
@@ -71,9 +87,18 @@ function renderReview() {
     const partner=reviewPairs.find(pair=>pair.includes(player.external_id))?.find(id=>id!==player.external_id);
     const partnerName=reviewDraft.find(item=>item.external_id===partner)?.name;
     const selectedForPair=reviewPairSelection===player.external_id;
-    const levelOptionsHtml=levelOptions.map(([value,label])=>`<option value="${value}" ${ratingLevel(player.rating)===value?'selected':''}>${'★'.repeat(levelOptions.findIndex(item=>item[0]===value)+1)} ${e(label)}</option>`).join('');
-    return `<article class="review-card ${partner?'paired':''} ${selectedForPair?'selected-for-pair':''}"><div class="review-row"><input class="review-select" type="checkbox" data-review-select="${index}" aria-label="Select ${e(player.name)}" ${player.selected?'checked':''}><input class="review-name" type="text" data-review-name="${index}" aria-label="Player name" maxlength="80" value="${e(player.name)}"><span class="review-badge-wrap">${partner?`<span class="review-pair-badge">Paired: ${e(partnerName||'Player')}</span>`:''}</span>${partner?`<button type="button" class="review-pair-action" data-review-unpair="${e(player.external_id)}">Unpair</button>`:`<button type="button" class="review-pair-action" data-review-pair="${e(player.external_id)}">${selectedForPair?'Choose player':'Pair'}</button>`}<button type="button" class="review-remove" data-review-remove="${index}" aria-label="Remove ${e(player.name)} from this list">×</button></div><div class="review-meta"><select data-review-gender="${index}" aria-label="Player category for ${e(player.name)}"><option value="" ${!player.gender?'selected':''}>Gender not set</option><option value="F" ${player.gender==='F'?'selected':''}>Woman</option><option value="M" ${player.gender==='M'?'selected':''}>Man</option></select><select data-review-level="${index}" aria-label="Skill level for ${e(player.name)}"><option value="" ${player.rating==null?'selected':''}>★★★★★★ Set skill</option>${levelOptionsHtml}</select>${state?.session.mode==='club_wars'?`<select data-review-group="${index}" aria-label="Club Wars group for ${e(player.name)}"><option value="" ${!player.club_group?'selected':''}>Choose group</option><option value="A" ${player.club_group==='A'?'selected':''}>Group A</option><option value="B" ${player.club_group==='B'?'selected':''}>Group B</option></select>`:`<span class="review-source">${e(reviewSource==='reclub'?'Reclub sign-up':'New player')}</span>`}</div></article>`;
+    const levelOptionsHtml=levelOptions.map(([value,label])=>`<option value="${value}" ${ratingLevel(player.rating)===value?'selected':''}>${e(label)}</option>`).join('');
+    return `<article class="review-card ${partner?'paired':''} ${selectedForPair?'selected-for-pair':''}"><div class="review-row"><input class="review-select" type="checkbox" data-review-select="${index}" aria-label="Select ${e(player.name)}" ${player.selected?'checked':''}><input class="review-name" type="text" data-review-name="${index}" aria-label="Player name" maxlength="80" value="${e(player.name)}"><span class="review-badge-wrap">${partner?`<span class="review-pair-badge">Paired: ${e(partnerName||'Player')}</span>`:''}</span>${partner?`<button type="button" class="review-pair-action" data-review-unpair="${e(player.external_id)}">Unpair</button>`:`<button type="button" class="review-pair-action" data-review-pair="${e(player.external_id)}">${selectedForPair?'Choose player':'Pair'}</button>`}<button type="button" class="review-remove" data-review-remove="${index}" aria-label="Remove ${e(player.name)} from this list">×</button></div><div class="review-meta"><small class="review-source">${e(reviewSource==='reclub'?'Reclub sign-up':'New player')}</small><div class="skill-control">${skillStars(player.rating)}<select data-review-level="${index}" aria-label="Skill level for ${e(player.name)}"><option value="" ${player.rating==null?'selected':''}>Set skill</option>${player.rating!=null&&!ratingLevel(player.rating)?`<option value="${e(player.rating)}" selected>${e(player.rating)} rating</option>`:''}${levelOptionsHtml}</select></div>${state?.session.mode==='club_wars'?`<select data-review-group="${index}" aria-label="Club Wars group for ${e(player.name)}"><option value="" ${!player.club_group?'selected':''}>Choose group</option><option value="A" ${player.club_group==='A'?'selected':''}>Group A</option><option value="B" ${player.club_group==='B'?'selected':''}>Group B</option></select>`:''}</div></article>`;
   }).join('');
+  list.scrollTop=scrollTop;
+  if(focusAttribute) {
+    const value=CSS.escape(focusValue);
+    const restore=list.querySelector(`[${focusAttribute}="${value}"]`)
+      || (focusAttribute.includes('pair') && list.querySelector(`[data-review-pair="${value}"], [data-review-unpair="${value}"]`))
+      || $('#add-reviewed-players');
+    restore.focus({preventScroll:true});
+  }
+  updateSkillSummary();
 }
 
 function showReview() {
@@ -150,7 +175,7 @@ function message(text, isError = false) {
   if (!isError) $('#error').hidden = true;
 }
 
-function initials(name) { const parts=name.replace(/\(demo\)/g,'').trim().split(/\s+/);return (parts.length===1?parts[0].slice(0,2):parts.slice(0,2).map(n=>n[0]).join('')).toUpperCase(); }
+function initials(name) { const parts=name.replace(/\((?:demo|synthetic)\)/g,'').trim().split(/\s+/);return (parts.length===1?parts[0].slice(0,2):parts.slice(0,2).map(n=>n[0]).join('')).toUpperCase(); }
 function avatar(name) { return `<span class="avatar" aria-hidden="true">${e(initials(name))}</span>`; }
 function button(label, attrs, kind='btn-outline') { return `<button class="btn btn-small ${kind}" ${attrs} ${busy?'disabled':''}>${label}</button>`; }
 function playerButton(player, action, label, kind='btn-outline') { return button(label,`data-player="${player.id}" data-player-action="${action}"`,kind); }
@@ -226,16 +251,16 @@ function courtCard(court, readOnly = false) {
   const game = state.games.find(g => g.court===court && ['assigned','playing'].includes(g.status));
   if (!game) return `<article class="court-card"><div class="court-top"><h3>Court ${court}</h3><span class="chip">${closed()?'Session closed':'Ready for players'}</span></div><div class="court-empty"><div class="court-lines" aria-hidden="true"></div><strong>${closed()?'See you next session':'The next four are up to you.'}</strong><p>${closed()?'Game results are saved below.':'Fill open courts to find a balanced game from the queue.'}</p></div></article>`;
   const social=state.session.mode==='social_mix';
-  const teams = ['a','b'].map(side=>`<div class="team"><span class="team-label">Team ${side.toUpperCase()}</span>${game.players.filter(p=>p.side===side).map(p=>`<div class="court-player">${avatar(p.name)}<div><strong>${e(p.name)}</strong><small>${social?'Social Mix':`${Math.round(p.rating)} · ${p.rating<1100?'Beginner':p.rating<1450?'Intermediate':p.rating<1750?'Advanced':'Competitive'}`}${['winners_losers','king_queen'].includes(state.session.mode)?` · ${e(state.players.find(player=>player.id===p.id_roster)?.last_outcome||'New player')}`:''}</small></div></div>`).join('')}</div>`);
-  const rationale=social?'Partner and opponent history guide rotation; ratings are not used.':state.session.mode==='balanced'?`Team A estimate ${Math.round(game.expected_a*100)}% · gap ${Math.round(Math.abs(game.mean_a-game.mean_b))}`:game.reason;
-  return `<article class="court-card"><div class="court-top"><h3>Court ${court}</h3><span class="chip active">${game.status==='playing'?'On court':'Up Next'}</span></div><div class="matchup">${teams[0]}<span class="versus">vs</span>${teams[1]}</div><div class="court-balance"><span class="balance-good">${e(modeNames[state.session.mode]||'Balanced')} matchup</span><span>${e(rationale)}</span></div>${readOnly?'':`<div class="court-actions">${game.status==='assigned'?button('Start game',`data-game="${game.id}" data-game-action="start"`,'btn-primary'):button('Record result',`data-result="${game.id}"`,'btn-primary')}${game.status==='assigned'?button('Rebuild',`data-game="${game.id}" data-game-action="rebuild"`):''}${button('Cancel',`data-cancel="${game.id}"`)}</div>`}</article>`;
+  const teams = ['a','b'].map(side=>`<div class="team"><span class="team-label">Team ${side==='a'?'1':'2'}</span>${game.players.filter(p=>p.side===side).map(p=>`<div class="court-player">${avatar(p.name)}<div><strong>${e(p.name)}</strong><small>${social?'Social Mix':`${Math.round(p.rating)} · ${p.rating<1100?'Beginner':p.rating<1450?'Intermediate':p.rating<1750?'Advanced':'Competitive'}`}${['winners_losers','king_queen'].includes(state.session.mode)?` · ${e(state.players.find(player=>player.id===p.id_roster)?.last_outcome||'New player')}`:''}</small></div></div>`).join('')}</div>`);
+  const rationale=social?'Partner and opponent history guide rotation; ratings are not used.':state.session.mode==='balanced'?`Team 1 estimate ${Math.round(game.expected_a*100)}% · gap ${Math.round(Math.abs(game.mean_a-game.mean_b))}`:game.reason;
+  return `<article class="court-card ${game.status==='playing'?'is-playing':'is-staged'}"><div class="court-top"><h3>Court ${court}</h3><span class="chip active">${game.status==='playing'?'On court':'Up Next'}</span></div><div class="matchup">${teams[0]}<span class="versus">vs</span>${teams[1]}</div><div class="court-balance"><span class="balance-good">${e(modeNames[state.session.mode]||'Balanced')} matchup</span><span>${e(rationale)}</span></div>${readOnly?'':game.status==='playing'?`<div class="winner-actions">${button('Team 1 Wins',`data-winner="${game.id}" data-side="a"`,'btn-team-one')}${button('Team 2 Wins',`data-winner="${game.id}" data-side="b"`,'btn-team-two')}</div><div class="court-secondary">${button('Cancel game',`data-cancel="${game.id}"`)}</div>`:`<div class="court-actions">${button('Start game',`data-game="${game.id}" data-game-action="start"`,'btn-primary')}${button('Rebuild',`data-game="${game.id}" data-game-action="rebuild"`)}${button('Cancel',`data-cancel="${game.id}"`)}</div>`}</article>`;
 }
 
 function tableToolbar(title, note, search=true) { return `<div class="panel-toolbar"><div><h2>${e(title)}</h2><p class="toolbar-copy">${e(note)}</p></div>${search?`<div class="search-wrap"><label for="player-search" class="sr-only">Search players</label><input id="player-search" placeholder="Search players…" value="${e(searchTerm)}" type="search"></div>`:''}</div>`; }
 
 function queueView() {
   const queued = state.players.filter(p=>p.queue_state==='waiting');
-  return `<div class="section-title"><div><h2>Your courts</h2><p>Close teams. Fresh partners. No automatic game starts.</p></div><span class="live-label">${closed()?'Session archived':'Session active'}</span></div><div class="courts">${Array.from({length:state.session.court_count},(_,i)=>courtCard(i+1)).join('')}</div><section class="panel">${tableToolbar('Up next',`${queued.length} waiting · longest-waiting player is protected`)}${queued.length?`<div class="table-wrap"><table class="queue-table"><thead><tr><th>Queue</th><th>Player</th><th>Skill band</th><th>Games</th><th>Wait</th><th>Action</th></tr></thead><tbody>${queued.map(p=>`<tr data-name="${e(p.name.toLowerCase())}"><td class="position ${p.position<=4?'first':''}">${String(p.position).padStart(2,'0')}</td><td><div class="player-cell">${avatar(p.name)}<div><strong>${e(p.name)}</strong><small>${p.provisional?'Provisional rating':`${Math.round(p.rating)} rating`}${p.is_late?' · arrived late':''}</small></div></div></td><td><span class="chip">${e(p.band)}</span></td><td class="number">${p.games_played}</td><td><span class="waiting-badge">${Math.floor(p.wait_minutes)} min</span></td><td>${playerButton(p,'pause','Take a break')}</td></tr>`).join('')}</tbody></table></div>`:empty(closed()?'Session complete':'No one is waiting yet',closed()?'Your attendance and completed games are stored in this session.':'Go to Attendance to check in players. Only present, eligible players enter the queue.',closed()?'':button('Check in players','data-view="attendance"','btn-primary'))}</section>${!state.players.length&&!closed()?`<div class="helper-strip"><strong>Start with your roster</strong><span>Import a CSV or try the workflow with demo players.</span>${button('Load demo roster','data-action="demo"')}</div>`:''}<div class="session-tools">${!closed()?button('Close session & finalize ratings','data-confirm="close"'):''}</div>`;
+  return `<div class="section-title"><div><h2>Your courts</h2><p>Close teams. Fresh partners. No automatic game starts.</p></div><span class="live-label">${closed()?'Session archived':'Session active'}</span></div><div class="courts">${Array.from({length:state.session.court_count},(_,i)=>courtCard(i+1)).join('')}</div><section class="panel">${tableToolbar('Up next',`${queued.length} waiting · longest-waiting player is protected`)}${queued.length?`<div class="table-wrap"><table class="queue-table"><thead><tr><th>Queue</th><th>Player</th><th>Skill band</th><th>Games</th><th>Wait</th><th>Action</th></tr></thead><tbody>${queued.map(p=>`<tr data-name="${e(p.name.toLowerCase())}"><td class="position ${p.position<=4?'first':''}">${String(p.position).padStart(2,'0')}</td><td><div class="player-cell">${avatar(p.name)}<div><strong>${e(p.name)}</strong><small>${p.provisional?'Provisional rating':`${Math.round(p.rating)} rating`}${p.is_late?' · arrived late':''}</small></div></div></td><td><span class="chip">${e(p.band)}</span></td><td class="number">${p.games_played}</td><td><span class="waiting-badge">${Math.floor(p.wait_minutes)} min</span></td><td>${playerButton(p,'pause','Take a break')}</td></tr>`).join('')}</tbody></table></div>`:empty(closed()?'Session complete':'No one is waiting yet',closed()?'Your attendance and completed games are stored in this session.':'Go to Attendance to check in players. Only present, eligible players enter the queue.',closed()?'':button('Check in players','data-view="attendance"','btn-primary'))}</section>${!state.players.length&&!closed()?`<div class="helper-strip"><strong>Start with your roster</strong><span>Paste a player list, use a Reclub link, or try synthetic demo players.</span>${button('Load demo roster','data-action="demo"')}</div>`:''}<div class="session-tools">${!closed()?button('Close session & finalize ratings','data-confirm="close"'):''}</div>`;
 }
 
 function attendanceView() {
@@ -248,7 +273,7 @@ function attendanceView() {
     const label=pairSelection&&pairSelection!==player.id?`Pair with ${e(selected?.name||'selected player')}`:pairSelection===player.id?'Cancel pair':'Pair';
     return button(label,`data-pair-player="${player.id}"`);
   };
-  return `<section class="panel">${tableToolbar('Session attendance','RSVP is a plan. Check-in is presence. Pair preferences keep chosen partners together.')}${players.length?`<div class="attendance-toolbar">${!closed()?button('Check in all','data-action="checkin-all"','btn-primary'):''}${pairNotice}</div><div class="table-wrap"><table class="attendance-table"><thead><tr><th>Player</th><th>RSVP</th><th>Attendance</th><th>Eligibility</th><th>Rotation</th><th>Pairing</th><th>Action</th></tr></thead><tbody>${players.map(p=>`<tr class="${p.paired_roster_id?'paired-row ':''}${p.id===pairSelection?'pairing-selected':''}" data-name="${e(p.name.toLowerCase())}"><td><div class="player-cell">${avatar(p.name)}<div><strong>${e(p.name)}</strong><small>${e(p.external_id)} · ${e(p.source)}</small></div></div></td><td>${e(p.rsvp)}</td><td><span class="chip ${p.attendance==='present'?'active':p.attendance==='no_show'?'warn':''}">${e(p.attendance.replace('_',' '))}${p.is_late?' · late':''}</span></td><td>${closed()?e(`${p.membership} / ${p.waiver}`):`<div class="inline-eligibility" data-eligibility="${p.id}"><select aria-label="Membership for ${e(p.name)}" data-membership ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>${['active','expired','unknown'].map(x=>`<option ${p.membership===x?'selected':''}>${x}</option>`).join('')}</select><select aria-label="Waiver for ${e(p.name)}" data-waiver ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>${['valid','missing','unknown'].map(x=>`<option ${p.waiver===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn-small btn-outline" data-save-eligibility="${p.id}" aria-label="Save eligibility for ${e(p.name)}" ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>Save</button></div>`}</td><td>${p.eligible?e(p.queue_state==='off'?'Not queued':p.queue_state):'<span class="chip blocked">Not eligible</span>'}</td><td><div class="pair-control">${closed()?'—':pairAction(p)}</div></td><td><div class="row-actions">${closed()?'—':p.attendance!=='present'?playerButton(p,'checkin','Check in','btn-primary'):['assigned','playing'].includes(p.queue_state)?'On court':`${p.queue_state==='waiting'?playerButton(p,'pause','Pause'):p.eligible?playerButton(p,'resume','Rejoin','btn-primary'):''}${playerButton(p,'checkout','Check out')}`}</div></td></tr>`).join('')}</tbody></table></div>`:empty('Your roster starts here','Paste a player list or load a public Reclub event. Review names and pair preferences before adding.',`${button('Import player list','data-open="import-dialog"','btn-primary')} ${button('Load demo roster','data-action="demo"')}`)}</section>${!closed()?`<div class="session-tools">${button('Reconcile absent RSVPs','data-confirm="reconcile"')}${button('Close session & finalize ratings','data-confirm="close"')}</div>`:''}<div class="helper-strip"><span>Reclub sign-ups start in Not Yet Here. A player joins the queue only after physical check-in and eligibility confirmation.</span></div>`;
+  return `<section class="panel">${tableToolbar('Session attendance','RSVP is a plan. Check-in is presence. Pair preferences keep chosen partners together.')}${players.length?`<div class="attendance-toolbar">${!closed()?button('Check in all','data-action="checkin-all"','btn-primary'):''}${pairNotice}</div><div class="table-wrap"><table class="attendance-table"><thead><tr><th>Player</th><th>RSVP</th><th>Attendance</th><th>Eligibility</th><th>Rotation</th><th>Pairing</th><th>Action</th></tr></thead><tbody>${players.map(p=>`<tr class="${p.paired_roster_id?'paired-row ':''}${p.id===pairSelection?'pairing-selected':''}" data-name="${e(p.name.toLowerCase())}"><td data-label="Player"><div class="player-cell">${avatar(p.name)}<div><strong>${e(p.name)}</strong><small>${e(p.external_id)} · ${e(p.source)}</small></div></div></td><td data-label="RSVP">${e(p.rsvp)}</td><td data-label="Attendance"><span class="chip ${p.attendance==='present'?'active':p.attendance==='no_show'?'warn':''}">${e(p.attendance.replace('_',' '))}${p.is_late?' · late':''}</span></td><td data-label="Eligibility">${closed()?e(`${p.membership} / ${p.waiver}`):`<div class="inline-eligibility" data-eligibility="${p.id}"><select aria-label="Membership for ${e(p.name)}" data-membership ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>${['active','expired','unknown'].map(x=>`<option ${p.membership===x?'selected':''}>${x}</option>`).join('')}</select><select aria-label="Waiver for ${e(p.name)}" data-waiver ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>${['valid','missing','unknown'].map(x=>`<option ${p.waiver===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn-small btn-outline" data-save-eligibility="${p.id}" aria-label="Save eligibility for ${e(p.name)}" ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>Save</button></div>`}</td><td data-label="Rotation">${p.eligible?e(p.queue_state==='off'?'Not queued':p.queue_state):'<span class="chip blocked">Not eligible</span>'}</td><td data-label="Pairing"><div class="pair-control">${closed()?'—':pairAction(p)}</div></td><td data-label="Action"><div class="row-actions">${closed()?'—':p.attendance!=='present'?playerButton(p,'checkin','Check in','btn-primary'):['assigned','playing'].includes(p.queue_state)?'On court':`${p.queue_state==='waiting'?playerButton(p,'pause','Pause'):p.eligible?playerButton(p,'resume','Rejoin','btn-primary'):''}${playerButton(p,'checkout','Check out')}`}</div></td></tr>`).join('')}</tbody></table></div>`:empty('Your roster starts here','Paste a player list or load a public Reclub event. Review names and pair preferences before adding.',`${button('Import player list','data-open="import-dialog"','btn-primary')} ${button('Load demo roster','data-action="demo"')}`)}</section>${!closed()?`<div class="session-tools">${button('Reconcile absent RSVPs','data-confirm="reconcile"')}${button('Close session & finalize ratings','data-confirm="close"')}</div>`:''}<div class="helper-strip"><span>Reclub sign-ups start in Not Yet Here. A player joins the queue only after physical check-in and eligibility confirmation.</span></div>`;
 }
 
 function standingsView() {
@@ -261,7 +286,7 @@ function liveView() {
 
 function resultsView() {
   const games = state.games.filter(g=>['completed','cancelled'].includes(g.status));
-  return `${standingsView()}<section class="panel">${tableToolbar('Game results',`${state.metrics.completed_games} completed · cancelled games do not affect ratings`,false)}${games.length?`<div class="table-wrap"><table class="result-table"><thead><tr><th>Game</th><th>Team A</th><th>Score</th><th>Team B</th><th>Result</th><th>Correction</th></tr></thead><tbody>${games.map(g=>`<tr data-result-row="${g.id}"><td><strong>#${g.id}</strong><br><small class="muted">Court ${g.court}</small></td><td>${g.players.filter(p=>p.side==='a').map(p=>e(p.name)).join('<br>')}</td><td class="number">${g.status==='completed'?`${g.score_a} : ${g.score_b}`:'—'}</td><td>${g.players.filter(p=>p.side==='b').map(p=>e(p.name)).join('<br>')}</td><td><span class="chip ${g.status==='completed'?'active':''}">${g.status==='completed'?`Team ${g.score_a>g.score_b?'A':'B'} won`:'Cancelled'}</span></td><td>${g.status!=='completed'||closed()?'—':swapConfirmation?.id===g.id?`<div class="swap-confirmation" role="group" aria-label="Swap winner for game ${g.id}"><span>Swap winner?</span>${button('Cancel',`data-swap-cancel="${g.id}"`)}${button('Swap',`data-swap-confirm="${g.id}"`,'btn-primary')}</div>`:button('Swap winner',`data-swap-winner="${g.id}"`)}</td></tr>`).join('')}</tbody></table></div>`:empty('The first result is still ahead','Start an assigned game, then record the score when it finishes.')}<div class="rating-note">${closed()?'Ratings were finalized as one session period. Closed sessions cannot be corrected.':'Swap exchanges the two scores. Up Next teams stay reserved; use Rebuild separately to reconsider them. Ratings update at session close.'} Individual doubles ratings use an experimental Glicko-2 adaptation.</div></section>`;
+  return `${standingsView()}<section class="panel">${tableToolbar('Game results',`${state.metrics.completed_games} completed · cancelled games do not affect ratings`,false)}${games.length?`<div class="table-wrap"><table class="result-table"><thead><tr><th>Game</th><th>Team 1</th><th>Team 2</th><th>Result</th><th>Correction</th></tr></thead><tbody>${games.map(g=>`<tr data-result-row="${g.id}"><td><strong>#${g.id}</strong><br><small class="muted">Court ${g.court}</small></td><td>${g.players.filter(p=>p.side==='a').map(p=>e(p.name)).join('<br>')}</td><td>${g.players.filter(p=>p.side==='b').map(p=>e(p.name)).join('<br>')}</td><td><span class="chip ${g.status==='completed'?'active':''}">${g.status==='completed'?`Team ${g.score_a>g.score_b?'1':'2'} won`:'Cancelled'}</span></td><td>${g.status!=='completed'||closed()?'—':swapConfirmation?.id===g.id?`<div class="swap-confirmation" role="group" aria-label="Swap winner for game ${g.id}"><span>Swap winner?</span>${button('Cancel',`data-swap-cancel="${g.id}"`)}${button('Swap',`data-swap-confirm="${g.id}"`,'btn-primary')}</div>`:button('Swap winner',`data-swap-winner="${g.id}"`)}</td></tr>`).join('')}</tbody></table></div>`:empty('The first result is still ahead','Start an assigned game, then choose the winning team when it finishes.')}<div class="rating-note">${closed()?'Ratings were finalized as one session period. Closed sessions cannot be corrected.':'Swap reverses the recorded winner. Up Next teams stay reserved; use Rebuild separately to reconsider them. Ratings update at session close.'} Individual doubles ratings use an experimental Glicko-2 adaptation.</div></section>`;
 }
 
 function activityView() {
@@ -277,7 +302,7 @@ async function mutate(action, data={}, dialog=null) {
   if (busy || !state) return false;
   const id = state.session.id;
   const focused = document.activeElement;
-  const focusGame = focused?.dataset.swapConfirm || focused?.dataset.game;
+  const focusGame = focused?.dataset.swapConfirm || focused?.dataset.game || focused?.dataset.winner;
   const focusPlayer = focused?.dataset.player;
   const focusAction = focused?.dataset.playerAction;
   busy = true;
@@ -293,7 +318,8 @@ async function mutate(action, data={}, dialog=null) {
     document.querySelectorAll('button[data-was-disabled]').forEach(b=>{b.disabled=b.dataset.wasDisabled==='true';delete b.dataset.wasDisabled;});
     $('#import-button').disabled = closed();
     $('#fill-button').disabled = closed();
-    if(state.notice) message(state.notice);
+    message(state.notice || (action==='game' && data.action==='complete' && data.winner
+      ? `Team ${data.winner==='a'?'1':'2'} won. Result recorded.` : ''));
     if(focusGame) ($(`[data-swap-winner="${focusGame}"]`) || $(`[data-game="${focusGame}"]`) || $('#workspace')).focus({preventScroll:true});
     if(focusPlayer) {
       const restore = $(`[data-player="${focusPlayer}"][data-player-action="${focusAction}"]`) || $(`tr:has([data-save-eligibility="${focusPlayer}"]) button[data-player]`);
@@ -365,7 +391,7 @@ document.addEventListener('click', event=>{
   if(target.id==='add-reviewed-players') {
     const selected=reviewDraft.filter(player=>player.selected);
     const ids=new Set(selected.map(player=>player.external_id));
-    const players=selected.map(({external_id,name,rating,gender,club_group})=>({external_id,name,rating,gender,club_group}));
+    const players=selected.map(({external_id,name,rating,club_group})=>({external_id,name,rating,club_group}));
     const pairs=reviewPairs.filter(pair=>pair.every(id=>ids.has(id)));
     return mutate('import-reviewed',{players,pairs,source:reviewSource,club_key:reviewClubKey},$('#review-dialog'));
   }
@@ -395,13 +421,7 @@ document.addEventListener('click', event=>{
     return mutate('player',{id_roster:Number(target.dataset.saveEligibility),action:'eligibility',membership:$('[data-membership]',fields).value,waiver:$('[data-waiver]',fields).value});
   }
   if(target.dataset.game) return mutate('game',{id_game:Number(target.dataset.game),action:target.dataset.gameAction});
-  if(target.dataset.result) {
-    resultGame=Number(target.dataset.result);
-    const game=state.games.find(g=>g.id===resultGame);
-    $('#result-form').reset();
-    $('#result-teams').innerHTML=`<div class="result-team-summary"><strong>Team A</strong>: ${game.players.filter(p=>p.side==='a').map(p=>e(p.name)).join(' + ')}<br><strong>Team B</strong>: ${game.players.filter(p=>p.side==='b').map(p=>e(p.name)).join(' + ')}</div>`;
-    return openDialog('result-dialog');
-  }
+  if(target.dataset.winner) return mutate('game',{id_game:Number(target.dataset.winner),action:'complete',winner:target.dataset.side});
   if(target.dataset.cancel || target.dataset.confirm) {
     const isCancel=Boolean(target.dataset.cancel);
     confirmAction=isCancel?{action:'game',data:{id_game:Number(target.dataset.cancel),action:'cancel'}}:{action:target.dataset.confirm,data:{}};
@@ -468,8 +488,12 @@ $('#review-player-list').addEventListener('change',event=>{
     const player=reviewDraft[Number(target.dataset.reviewSelect)];if(player){player.selected=target.checked;if(!target.checked)reviewPairs=reviewPairs.filter(pair=>!pair.includes(player.external_id));}
     renderReview();return;
   }
-  if(target.dataset.reviewGender!==undefined)reviewDraft[Number(target.dataset.reviewGender)].gender=target.value||null;
-  if(target.dataset.reviewLevel!==undefined)reviewDraft[Number(target.dataset.reviewLevel)].rating=target.value===''?null:Number(target.value);
+  if(target.dataset.reviewLevel!==undefined) {
+    const rating=target.value===''?null:Number(target.value);
+    reviewDraft[Number(target.dataset.reviewLevel)].rating=rating;
+    target.closest('.skill-control').querySelector('.skill-stars').outerHTML=skillStars(rating);
+    updateSkillSummary();
+  }
   if(target.dataset.reviewGroup!==undefined)reviewDraft[Number(target.dataset.reviewGroup)].club_group=target.value||null;
 });
 $('#review-player-list').addEventListener('input',event=>{
@@ -483,7 +507,6 @@ $('#review-bulk-level').addEventListener('change',event=>{
   }
   event.target.value='noop';
 });
-$('#result-form').addEventListener('submit',event=>{event.preventDefault();const form=new FormData(event.target);mutate('game',{id_game:resultGame,action:'complete',score_a:Number(form.get('score_a')),score_b:Number(form.get('score_b'))},$('#result-dialog'));});
 $('#confirm-form').addEventListener('submit',event=>{event.preventDefault();if(confirmAction)mutate(confirmAction.action,{...confirmAction.data,...(confirmAction.action==='game'?{reason:$('#cancel-reason').value}:{})},$('#confirm-dialog'));});
 window.addEventListener('popstate',()=>{searchTerm='';load(true);});
 window.addEventListener('hashchange',()=>{searchTerm='';load(true);});

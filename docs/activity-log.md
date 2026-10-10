@@ -206,3 +206,46 @@
   Safari/Firefox/physical-device verification, automated browser CI, and the 90% coverage
   target are unfinished. Dynamic court management, manual team editing, and independent
   future-match slots beyond one reservation per free court remain separate increments.
+
+
+## 2026-10-10 — Skills-only UI and reference winner controls (#1, sprint unassigned)
+
+- Applied the local design repository's engineering rules, design filter, and motion
+  specification to the existing Courtside interface. Kept the current stack, brand
+  palette, navigation, attendance gates, queue selection, and lightweight motion.
+  No additional design prompt or dependency was needed.
+- Corrected the earlier mismatch with the supplied screenshots: playing courts now
+  expose Team 1 Wins and Team 2 Wins directly. Removed the numeric result dialog and
+  score column. Completion accepts an explicit winner, records binary outcome markers
+  in existing columns, and audits winner-only results without inventing point scores.
+  Legacy score submissions remain compatible; mixed winner/score payloads are rejected.
+  Corrections, standings, rating finalization, and explicit Rebuild use the same engine.
+- Removed gender controls and gender submission from player review. Individual star
+  skills and the bulk selector show current/mixed levels, retaining pairing/unpairing.
+  Mixed Doubles is visibly disabled for skills-only setup rather than offering a format
+  that requires unavailable category inputs. Existing stored categories are untouched.
+- Enhanced native dropdowns progressively with styled pickers where supported; retained
+  native browser fallback, keyboard selection, Escape, and focus indicators. Improved
+  form targets, readable supporting text, panel consistency, paired badges, team
+  grouping, and mobile attendance cards. Review rerenders preserve keyboard focus and
+  list scroll. Fixed a mobile review-footer clipping problem found during visual QA.
+- Verification: 68 unittest tests passed, including invalid winner/mixed payload rollback,
+  duplicate completion, winner-only counts, audit, and correction. Existing legacy-score
+  tests continue to pass. Compileall, Node 24 syntax checks, and whitespace checks passed.
+  Expanded Chromium 150.0.7871.124 smoke passed desktop/mobile/touch, Back/Forward, reload,
+  winner buttons, correction/Cancel, standings, reserved teams, Rebuild, rating close,
+  reduced motion, missing IntersectionObserver, skills, checkbox keyboard focus,
+  unknown eligibility, and HTML escaping. Additional fresh browser-context inspection
+  exercised bulk/individual levels, pairing, native picker/Escape, mobile review and
+  attendance, eligibility, and Team 2 Wins; no page errors or body overflow occurred.
+  All sessions and screenshots used synthetic names and temporary SQLite databases.
+- Initial added unit test treated serialized audit detail as a dict; corrected the
+  assertion to parse JSON before the passing run. An exploratory browser check targeted
+  Save instead of its accessible Save eligibility name and timed out; corrected the
+  locator before the successful run. Neither failed check is counted as passing.
+- Read GitHub rulesets back: develop and staging/main protections remain active with
+  one approval, last-push/code-owner review, resolved threads, verify, deletion/force
+  blocks, and no bypass actors. No protection, deployment, schema, or permission change.
+- Not verified: Safari, Firefox, physical devices, screen readers, club/cloud sharing,
+  hosted Reclub, and Vercel deployment. Existing hosted integration and independent
+  future-match/court-management work remains pending.

@@ -144,6 +144,33 @@ class EngineTests(unittest.TestCase):
         self.engine.game_action(self.id_session,self.revision(),id_game,'complete',
                                 {'score_a':score_a,'score_b':score_b})
 
+    def test_winner_only_result_and_correction(self):
+        self.import_players()
+        self.check_all()
+        game = self.fill()['assigned'][0]
+        self.engine.game_action(self.id_session,self.revision(),game,'start')
+        for payload in ({'winner':'c'}, {'winner':'a','score_a':11,'score_b':0}):
+            revision = self.revision()
+            with self.assertRaises(Problem):
+                self.engine.game_action(self.id_session,revision,game,'complete',payload)
+            self.assertEqual(self.revision(),revision)
+            self.assertEqual(self.state()['metrics']['completed_games'],0)
+        self.engine.game_action(self.id_session,self.revision(),game,'complete',{'winner':'b'})
+        before = self.state()
+        result = next(g for g in before['games'] if g['id']==game)
+        self.assertEqual((result['score_a'],result['score_b']),(0,1))
+        self.assertEqual(before['metrics']['completed_games'],1)
+        self.assertTrue(all(p['games_played']==1 for p in before['players']))
+        self.assertEqual(sum(p['wins'] for p in before['players']),2)
+        self.assertEqual(json.loads(before['audit'][0]['detail'])['result_type'],'winner_only')
+        with self.assertRaises(Problem):
+            self.engine.game_action(self.id_session,self.revision(),game,'complete',{'winner':'b'})
+        self.engine.game_action(self.id_session,self.revision(),game,'swap_winner')
+        after = self.state()
+        result = next(g for g in after['games'] if g['id']==game)
+        self.assertEqual((result['score_a'],result['score_b']),(1,0))
+        self.assertTrue(all(p['games_played']==1 for p in after['players']))
+
     def test_swap_winner_preserves_counts_queue_and_staged_games(self):
         self.import_players([1200]*4)
         self.check_all()

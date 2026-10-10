@@ -72,7 +72,8 @@ Start with a new session. Import a roster or select **Load demo roster**, which
 creates 30 clearly marked synthetic players in an empty session. Demo identities
 are isolated from real roster imports. In **Attendance**, confirm eligibility
 and check players in; then **Fill open courts**. Start each game explicitly,
-record the result when finished, and close the session to finalize ratings.
+choose **Team 1 Wins** or **Team 2 Wins** when finished, and close the session
+to finalize ratings.
 
 On mobile, **+ New session** is also available in the session dropdown.
 
@@ -234,7 +235,8 @@ before the next court is assigned. Ties are deterministic.
 ### Play modes and partner preferences
 
 Session setup offers Balanced, Social Mix, Skill Separated, Winners / Losers,
-Skill Courts, Mixed Doubles, King/Queen, and Club Wars. Each court fill still
+Skill Courts, King/Queen, and Club Wars. Mixed Doubles is shown disabled in the
+skills-only setup, since it requires player categories. Each court fill still
 requires four present and eligible players. Social Mix scores recent partner and
 opponent repetition without using ratings. Skill modes restrict candidate pools
 to one configured rating band. Mixed Doubles requires two organizer-confirmed
@@ -244,7 +246,8 @@ side. Winners / Losers uses each player's most recent completed result, while
 King/Queen moves winners toward court 1 and losers toward higher-numbered courts.
 
 The roster review screen supports selected players, name edits, optional skill
-levels, and partner preferences. A chosen pair is kept together as a hard team
+levels, and partner preferences. No gender field is shown or submitted by this UI.
+A chosen pair is kept together as a hard team
 constraint; the second player can be included beyond the normal candidate window
 when needed. If that conflicts with the selected play mode or no other valid
 match exists, the court stays open with an explanation. Attendance also offers
@@ -262,8 +265,8 @@ explicitly pause a player; the engine does not silently demote them.
 Assigned games are this engine's reserved Up Next plans: each holds one open court
 and four eligible players until explicitly started or cancelled. In **Game results**,
 **Swap winner** opens inline **Cancel** / **Swap** controls. Cancel does not write
-anything. Swap exchanges the two recorded scores in the same game and audits their
-before/after values. Match number, court, completion time, total game count, games
+anything. Swap reverses the recorded winner in the same game and audits the
+before/after outcome. Match number, court, completion time, total game count, games
 played, queue tickets, and existing reserved teams stay unchanged.
 
 **Live Standings** derive wins/losses from completed results and update immediately.
@@ -277,7 +280,7 @@ and revision. Rebuild neither starts a game nor relaxes eligibility, pairing, ba
 or division constraints. Completed or playing games cannot be rebuilt.
 
 Corrections are available only while the session is active. Ratings remain frozen
-until close, when the corrected scores supply the single Glicko-2 period. Closed
+until close, when the corrected outcomes supply the single Glicko-2 period. Closed
 sessions are read-only; reopening and replaying finalized ratings remain pending.
 
 **Live View** displays courts and standings without court mutation controls. It is
@@ -422,9 +425,12 @@ cross-origin JSON changes and unknown Host headers. It does not log request payl
 
 Session mutations require the current integer `revision`; creating a session does
 not. Expected input problems return JSON errors; stale/invalid transitions return
-409. Completion requires two unequal integer scores between 0 and 99. The MVP
-does not enforce a tournament scoring format such as win-by-two or target 11;
-the organizer records the agreed result.
+409. On a playing court, **Team 1 Wins** / **Team 2 Wins** submits `winner: "a"`
+or `winner: "b"`; no numeric score is requested or displayed. The existing score
+columns store binary outcome indicators (1/0), not claimed point scores. The audit
+identifies winner-only results. Existing API clients can still submit two unequal
+integer scores from 0 to 99. Supplying scores and a winner together is rejected.
+Both forms use the same guarded completion, queue return, correction, and rating logic.
 
 ## Edge cases and future policy
 
