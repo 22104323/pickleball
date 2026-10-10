@@ -1,11 +1,12 @@
 # Contributing
 
-Open an issue before starting a change. If you do not have write access, fork the repo
-and push your branch there. Public visibility does not grant write access to this repo.
-Only invite trusted maintainers; contributors can use fork pull requests without an invitation.
+Open an issue before starting a change. Public visibility does not grant write access
+to this repository. Contributors can fork it, push to their own fork, and open a PR to
+`main`. Do not request upstream write access for a contribution.
 
 Use `feature/#<issue-number>`, `bugfix/#<issue-number>`, `hotfix/#<issue-number>`,
-`release/#<issue-number>`, or `docs/#<issue-number>`. Target `develop`.
+`release/#<issue-number>`, or `docs/#<issue-number>`. Fork contributions target `main`.
+Maintainer releases use a temporary `release/#<issue-number>` branch and a PR to `main`.
 Commit and PR titles use `feat(#1): [Browser] describe the actual change` or the relevant
 Conventional Commit type and real issue number. Include purpose, test results, omissions,
 and screenshots for visible website changes. Do not add generated-by or co-author footers.
@@ -21,15 +22,15 @@ python3 tools/check_repository.py --history
 
 All contribution workflows use a read-only GitHub token and no deployment secrets.
 External fork workflows require maintainer approval. Actions are pinned to full commit
-SHAs and restricted to GitHub-owned actions. CI, passing reviews, and code-owner approval
-are required to merge; changes after approval require a new review. Maintainers promote
-`develop → staging → main` through reviewed PRs. Squash contributions into develop;
-use merge commits for promotions so repeated releases retain a shared ancestor.
+SHAs and restricted to GitHub-owned actions. A PR and passing `verify` checks are required
+to merge. The repository has one maintainer, so the rules do not require an independent
+approval; `@22104323` checks and merges after CI passes. Direct pushes to `main`, force
+pushes, deletion, and bypass are blocked. Development and staging promotion PRs live in
+the separate private workspace; the public repository carries releases on `main`.
 
-The current account is a personal GitHub repository, with organization-style review
-controls. No organization transfer or extra collaborator access was performed.
-`@22104323` owns code review. GitHub disallows self-approval, so maintainer-authored
-PRs need another trusted reviewer; the initial bootstrap PR remains unmerged until then.
+The public project remains a personal repository, not an organization. Only `@22104323`
+has upstream write access. Forks let contributors push their own branches without
+granting access to the release repository.
 
 Never commit `.env`, tokens, credentials, databases, roster exports, or real personal
 data. Track `.gitignore` and `.vercelignore` so everyone shares the exclusion rules.

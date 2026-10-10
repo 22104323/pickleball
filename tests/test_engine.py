@@ -622,10 +622,12 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.engine.list_sessions(),[])
 
     def test_static_assets_and_missing_route(self):
-        for path in ('/','/app.js','/styles.css','/favicon.svg'):
+        for path in ('/','/app.js','/styles.css','/favicon.svg','/fonts/patrick-hand-latin.woff2'):
             with urlopen(f'http://127.0.0.1:{self.port}{path}') as response:
                 self.assertEqual(response.status,200)
                 self.assertIn("frame-ancestors 'none'",response.headers['Content-Security-Policy'])
+                if path.endswith('.woff2'):
+                    self.assertEqual(response.headers['Content-Type'],'font/woff2')
         with self.assertRaises(HTTPError) as error:
             urlopen(f'http://127.0.0.1:{self.port}/../../etc/passwd')
         self.assertEqual(error.exception.code,404)

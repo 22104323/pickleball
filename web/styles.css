@@ -1443,6 +1443,54 @@ dialog p {
   .mode-option:hover, .mode-option:active { transform: none; }
 }
 
+/* Minimal entry screen; the existing session workspace appears after link creation. */
+@font-face {
+  font-family:"Patrick Hand";
+  src:url("/fonts/patrick-hand-latin.woff2") format("woff2");
+  font-style:normal;
+  font-weight:400;
+  font-display:swap;
+}
+body:not(.has-session) { background:#fff; }
+body:not(.has-session) .session-header,
+body:not(.has-session) .main-shell { display:none; }
+body:not(.has-session) .skip-link { display:none; }
+main.landing-page {
+  display:grid;
+  place-items:start center;
+  width:100%;
+  max-width:none;
+  min-height:100vh;
+  margin:0;
+  padding:52px 20px 32px;
+}
+main.landing-page[hidden] { display:none; }
+.landing-content { display:grid; justify-items:center; gap:36px; width:min(100%,307px); }
+.landing-title {
+  margin:0;
+  color:#171717;
+  font:400 19px/1.25 "Patrick Hand","Comic Sans MS","Chalkboard","Segoe Print","Bradley Hand",cursive;
+  letter-spacing:.06em;
+}
+.landing-generate {
+  width:100%;
+  min-height:47px;
+  border:1.5px solid #171717;
+  border-radius:11px;
+  background:#fff;
+  color:#171717;
+  font:400 17px/1.2 "Patrick Hand","Comic Sans MS","Chalkboard","Segoe Print","Bradley Hand",cursive;
+  transition:background-color var(--fast) var(--ease),transform var(--fast) var(--move);
+}
+.landing-generate:hover:not(:disabled) { background:#f8f8f8; transform:translateY(-1px); }
+.landing-generate:active:not(:disabled) { transform:translateY(0); }
+.landing-generate:focus-visible { outline:3px solid #174a38; outline-offset:3px; }
+.landing-message { max-width:290px; margin:-20px 0 0; color:var(--muted); font-size:12px; line-height:1.5; text-align:center; }
+@media (prefers-reduced-motion:reduce) {
+  .landing-generate { transition:none; }
+  .landing-generate:hover:not(:disabled),.landing-generate:active:not(:disabled) { transform:none; }
+}
+
 .standings-panel .table-wrap { max-height: 420px; overflow: auto; }
 
 /* The session workspace follows the court / queue / upcoming-match reference. */

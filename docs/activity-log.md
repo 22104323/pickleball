@@ -308,3 +308,39 @@
   The bulk selected-player level dropdown remains.
 - Updated the existing browser smoke script for the new navigation and star control.
   Tests were not run for this change. Fresh browser screenshots were not captured.
+
+
+## 2026-10-10 — Same-browser session links and one-maintainer release path (#3, sprint unassigned)
+
+- Added the requested minimal COURTSIDE landing screen with a Generate Link button.
+  Generating it creates a local Open Play session, gives it a random UUID token in the
+  URL fragment, and stores the token-to-local-session mapping in this browser's local
+  storage. It then opens the existing organizer dashboard. Unknown tokens remain on
+  the landing screen with a clear same-browser message. Numeric session IDs are not
+  accepted as link credentials. The token is not authentication or cross-device access;
+  session records still live in the local SQLite database.
+- Matched the supplied landing screenshot's centered title, compact outlined button,
+  white background, and top spacing. Added a small self-hosted Patrick Hand font under
+  its included SIL OFL license, with no third-party runtime request. The local server
+  exposes only that specific font path. Updated browser smoke coverage for fresh landing,
+  generated link, reload, and isolated browser storage.
+- Updated contribution and deployment documentation for a one-person release process:
+  PR plus `verify` checks remain required, approval count is zero, no bypass actors,
+  force pushes, or protected-branch deletion. The private workspace keeps development
+  and staging; contributors fork the public repo and open PRs to main. Public legacy
+  development refs are pending retirement after the release is ready.
+- Verification: all 69 Python tests passed; repository path/credential checks passed.
+  Temporary SQLite and Chrome 150.0.7871.124 profiles confirmed the landing screen,
+  UUID link creation, dashboard transition, same-profile reload, and rejection of the
+  same URL from an isolated profile with no local mapping. Desktop/mobile landing and
+  dashboard captures are in `docs/screenshots/`. The browser smoke script was updated
+  but not run locally; Node is unavailable. GitHub CI runs Node syntax checks, but it
+  does not execute the Playwright browser smoke.
+- Early exploratory CDP attempts had harness issues with Chromium's handshake wording,
+  navigating targets, and WebSocket frames. The harness was corrected and rerun using
+  fresh targets and isolated temporary profiles. No product failure was observed.
+- The first GitHub `verify` run caught trailing whitespace carried by the upstream OFL
+  text file. Removed whitespace only; the included license wording is unchanged, then
+  reran repository checks before pushing the correction.
+- No hosted app deployment was performed. The current Vercel preflight still blocks
+  until the hosted Reclub attendee route exists; the local SQLite API is not deployed.
