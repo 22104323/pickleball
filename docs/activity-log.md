@@ -351,3 +351,24 @@
   `staging`. Public PR #4 is the only temporary release branch; its `verify` checks pass.
 - No hosted app deployment was performed. The current Vercel preflight still blocks
   until the hosted Reclub attendee route exists; the local SQLite API is not deployed.
+
+
+## 2026-10-10 — Public source release complete (#3, sprint unassigned)
+
+- Merged public PR #4 to protected `main` using the ruleset's required merge commit.
+  Public main now contains the Courtside app and the same-browser Generate Link flow.
+  The temporary `release/#3` branch was deleted automatically. Public PR #2 was closed;
+  old public `develop`, `staging`, and `feature/#1` refs were removed after preserving
+  the work in the private development workspace. The public repository now has only
+  `main` as a branch. Contributors can fork and submit PRs; only `@22104323` has upstream
+  write access.
+- A GitHub readback found both repositories private, contrary to the open-source request.
+  Restored `22104323/pickleball` to public while keeping the development workspace private.
+  Read back the active public ruleset: only `main` is targeted; PR and `verify` required;
+  approval count zero; no bypass actors; force push and branch deletion blocked.
+- Public PR #4's `verify` checks passed, and the post-merge CI workflow passed. The
+  post-merge Vercel workflow failed at the expected hosted-data-boundary preflight and
+  skipped deployment because the reviewed Reclub attendee route is not implemented.
+  This is a GitHub source release, not a deployed website.
+- Corrected the deployment guide's public merge-method statement to match the active
+  merge-only ruleset and recorded the final branch/deployment status in this entry.
