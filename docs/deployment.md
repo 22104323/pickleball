@@ -20,12 +20,13 @@ shared history.
 | Repository | Branch flow | Merge | Deployment |
 | --- | --- | --- | --- |
 | Private workspace | issue branch → `develop` → `staging` → `main` | Squash contributions; merge promotions | Staging/production workflow is preflight-gated |
-| Public release | fork PR → `main`; maintainer release branch → `main` | Squash after `verify` | Blocked until hosted prerequisites are met |
+| Public release | fork PR → `main`; maintainer release branch → `main` | Merge commit after `verify` | Blocked until hosted prerequisites are met |
 
 The private ruleset protects `develop`, `staging`, and `main`. The public release ruleset
 protects `main`; temporary release branches are deleted after merge. Public `develop`,
 `staging`, and the earlier public feature branch are being retired after their history is
-preserved in the private workspace and the replacement release is ready.
+preserved in the private workspace. The initial release's temporary `release/#3` branch
+was deleted after merge; the public repository now has only the long-lived `main` branch.
 
 The public `staging` and `production` GitHub environments have owner approval gates for
 their allowed branch. The private GitHub plan does not support required-reviewer
