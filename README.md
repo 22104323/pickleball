@@ -12,7 +12,7 @@ a better valid split is available.
 This repository contains a Python/SQLite local organizer and a browser JavaScript
 organizer for static Vercel hosting. Both use the existing plain HTML/CSS interface.
 There are no runtime packages to install. Hosted sessions stay on the user's device;
-the currently deployed attendee-only page still needs the corrected release.
+the public Vercel site serves the browser organizer through protected releases.
 
 | Available now | Pending |
 | --- | --- |
@@ -24,7 +24,7 @@ the currently deployed attendee-only page still needs the corrected release.
 | Recent partner/opponent costs and a small first-game newcomer bonus | Full fairness dashboard and calibrated match-quality metrics |
 | Session-close Glicko-2 periods, rating history, and audit records | Empirical validation of the individual doubles adaptation |
 | Responsive organizer interface, local Live View, reduced-motion support, and 48-hour browser sessions with copied snapshot links | Hosted organizer authentication, authorization, and multi-organizer access |
-| GitHub review rules, CI checks, and a gated Vercel deployment workflow | Deploying the corrected browser entry page and shared live editing |
+| GitHub review rules, CI checks, and a gated Vercel deployment workflow | Shared live editing |
 
 ## Contributions and deployment
 
@@ -40,8 +40,8 @@ The Vercel entry page now uses the original green organizer UI and runs the
 queue, matching, and results in the user's browser. Users generate a 48-hour
 session link, import players manually or directly from a public Reclub link, and
 operate without accounts or a hosted database. Copied links contain snapshots;
-edits on different devices do not synchronize. The existing public deployment
-still serves the previous attendee-only page until the corrected commit deploys.
+edits on different devices do not synchronize. The public deployment serves the browser organizer; each approved update must
+pass protected release checks and Vercel readiness inspection.
 See [browser sessions](docs/browser-sessions.md) for expiry, storage, sharing,
 and [deployment setup](docs/deployment.md) for the protected release workflow.
 
@@ -86,24 +86,24 @@ is included in [web/fonts/OFL.txt](web/fonts/OFL.txt).
 
 Start with a new session. Import a roster or select **Load demo roster**, which
 creates 30 clearly marked synthetic players in an empty session. Demo identities
-are isolated from real roster imports. In **Attendance**, confirm eligibility
-and check players in; then **Fill open courts**. Start each game explicitly,
-choose **Team 1 Wins** or **Team 2 Wins** when finished, and close the session
-to finalize ratings.
+are isolated from real roster imports. On the browser site, set up courts and
+matching mode, then check players in individually or with **Check in all**.
+**Start session** starts valid games automatically. Results, cancellations, new
+check-ins, and added courts advance the rotation without a Fill/Send step.
+Choose **Team 1 Wins** or **Team 2 Wins** when a game finishes.
 
-Session sections appear as buttons in the left navigation rail on desktop and a compact
-button row on mobile. Individual skill levels are set by clicking a star; arrow keys move
-between levels, and the **Clear** control removes a single player's rating. The bulk
-level dropdown remains available for selected players.
+The separate Attendance navigation and header session selector are removed.
+**Players & check-in** opens the player list during play. Desktop court controls
+remain visible while long queue and Up Next lists scroll inside their panels.
+Up Next previews all compatible waiting-player groups and shows teams and
+matches ahead; it is not a clock-time estimate or a reservation. Live View shows
+the same upcoming list without game controls. Game results and Live Standings
+are side by side on desktop and stacked on narrow screens.
 
-The session workspace uses a compact top header, session selector, and left-side
-navigation buttons. Live Courts appear above the rotation: the ordered Queue sits on the left,
-with separate numbered Up Next cards beside it. Queue rows include reserved players
-until their game starts; the occupied-court counter counts only games actually playing.
-Use **Start Up Next** on a court or **Send to Court** on its reserved card to start it.
-On narrow screens, Up Next appears before the queue. There is one reserved plan per
-available court, not an independent list of future matches. Manual team editing,
-dynamic court management, and player-call controls remain pending.
+The local Python organizer retains eligibility confirmation and explicit
+Fill/Start operations; its player roster is available through **Players & check-in**.
+Both runtimes support adding courts, up to eight. See
+[browser sessions](docs/browser-sessions.md) for the hosted runtime and its limits.
 
 ## Reclub ownership and integration boundary
 

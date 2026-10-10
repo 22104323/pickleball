@@ -61,11 +61,20 @@ the device; no Python function or hosted SQLite database is required. See
 [browser session behavior](browser-sessions.md) and
 [`.vercelignore` documentation](https://vercel.com/docs/deployments/vercel-ignore).
 
-On 2026-10-10 the public URL `https://pickleball-beige-xi.vercel.app/` returned
-HTTP 200 with the previous attendee-only entry page. That deployment exists, but
-the corrected browser organizer is not yet deployed. The production GitHub
-environment has no configured deployment secret/variables in the latest check,
-and no local Vercel credentials/project metadata are available to this agent.
+On 2026-10-10 public workflow run `38033184595` deployed browser-organizer
+commit `05e5a14d3440c5b7b23eea17223c873f0e982445` and reported Vercel READY.
+The live site returned HTTP 200 and the generated-link flow showed the green
+organizer. The workflow uses the GitHub environment named exactly `production`,
+with `VERCEL_TOKEN` as its secret and `VERCEL_PROJECT_ID` and
+`VERCEL_WEBSITE_READY=true` as variables. A Vercel-created environment such as
+`Production – pickleball` is a different environment. Never approve a superseded
+run or report a newer source change as deployed until its own run is READY.
+
+Private changes first merge through a protected contribution PR to `develop`.
+The public release contains the same reviewed application files in a protected
+release PR to public `main`; that public production workflow owns the live URL.
+Private staging/production promotion remains a separate route requiring its own
+configured environments and successful staging deployment.
 
 Before enabling deployment:
 

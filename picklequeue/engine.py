@@ -94,6 +94,14 @@ class Engine:
         db.execute('INSERT INTO audit_log(id_session,action,detail,created_at) VALUES(?,?,?,?)',
                    (id_session, action, json.dumps(detail, sort_keys=True), self.clock()))
 
+    def add_court(self, id_session, revision):
+        with self.transaction(id_session, revision) as (db, session):
+            if session['court_count'] >= 8:
+                raise Problem('A session supports at most 8 courts.', 409)
+            court = session['court_count'] + 1
+            db.execute('UPDATE sessions SET court_count=? WHERE id=?', (court, id_session))
+            self.audit(db, id_session, 'court.added', {'court': court})
+
     def list_sessions(self):
         with self.connect() as db:
             return [dict(row) for row in db.execute('SELECT * FROM sessions ORDER BY id DESC')]

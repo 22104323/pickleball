@@ -81,8 +81,36 @@
     return snapshot(record);
   }
 
+  function upcoming(record) {
+    const waiting=record.players.filter(p=>p.queue_state==='waiting'&&eligible(p));
+    const matches=[];
+    if(record.session.status==='active'&&record.games.length&&waiting.length>=4) {
+      const preview=structuredClone(record);
+      const playing=record.games.filter(g=>g.status==='playing').sort((a,b)=>a.started_at-b.started_at||a.court-b.court);
+      const courts=[...playing.map(g=>g.court),...Array.from({length:record.session.court_count},(_,i)=>i+1).filter(court=>!playing.some(g=>g.court===court))];
+      let progress=true;
+      while(progress&&matches.length<Math.floor(waiting.length/4)) {
+        progress=false;
+        for(const court of courts) {
+          preview.games=preview.games.filter(g=>g.court!==court||!ACTIVE.includes(g.status));
+          fill(preview,[court]);
+          const game=preview.games.find(g=>g.status==='assigned'&&g.court===court);
+          if(game) {
+            matches.push({...structuredClone(game),preview:true,turn:matches.length+1});
+            game.status='playing';
+            progress=true;
+          }
+        }
+      }
+    }
+    const planned=new Set(matches.flatMap(g=>g.players.map(p=>p.id_roster)));
+    return {matches,waiting:waiting.filter(p=>!planned.has(p.id)).map(p=>p.id)};
+  }
+
   function snapshot(record) {
     const output = structuredClone(record);
+    const planned=upcoming(record);
+    output.up_next=planned.matches;
     const wins = new Map(), latest = new Map();
     const completed = output.games.filter(game=>game.status==='completed').sort((a,b)=>b.id-a.id);
     for (const game of completed) for (const player of game.players) {
@@ -114,7 +142,7 @@
       on_court:output.players.filter(p=>ACTIVE.includes(p.queue_state)).length,completed_games:completed.length,
       no_shows:output.players.filter(p=>p.attendance==='no_show').length,late:output.players.reduce((n,p)=>n+p.is_late,0),
       stomp_rate:completed.length?completed.filter(g=>g.expected_a<.35||g.expected_a>.65).length/completed.length:null};
-    return {session:output.session,players:output.players,games:output.games,audit:output.audit,standings,metrics,expires_at:record.expires_at};
+    return {session:output.session,players:output.players,games:output.games,up_next:output.up_next,up_next_waiting:planned.waiting,audit:output.audit,standings,metrics,expires_at:record.expires_at};
   }
 
   function enqueue(record,player) {
@@ -161,6 +189,15 @@
         player.waiver = data.waiver;
         if (!eligible(player)) off(player);
         else if (player.attendance==='present'&&player.queue_state==='off') enqueue(record,player);
+      } else if (data.action==='rating') {
+        if (record.games.length) fail('Set initial skills before preparing the first game.',409);
+        const rating=Number(data.rating);
+        if (!Number.isFinite(rating)||rating<0||rating>4000) fail('Ratings must be from 0 to 4000.');
+        player.rating=rating;player.base_rating=rating;
+      } else if (data.action==='remove') {
+        if (record.games.length) fail('Remove players before preparing the first game; use check-out during play.',409);
+        if (player.paired_roster_id) getPlayer(record,player.paired_roster_id).paired_roster_id=null;
+        record.players=record.players.filter(p=>p.id!==player.id);
       } else if (data.action==='resume') {
         if (player.attendance!=='present'||!eligible(player)) fail('Player must be present and eligible.');
         if (player.queue_state==='waiting') fail('Player is already queued.',409);
@@ -253,7 +290,7 @@
     return teams.map(team=>team.map(p=>p.id).sort((a,b)=>a-b).join(':')).sort().join('|');
   }
 
-  function choose(players,counts,mode,excluded=null) {
+  function choose(players,counts,mode,excluded=null,preferred=null) {
     if (players.length<4) return null;
     const ordered=[...players].sort((a,b)=>a.ticket-b.ticket||a.id-b.id), anchor=ordered[0];
     const positions=new Map(ordered.map((p,i)=>[p.id,i]));
@@ -264,6 +301,7 @@
       let best=null;
       for (let i=1;i<pool.length-2;i++) for (let j=i+1;j<pool.length-1;j++) for (let k=j+1;k<pool.length;k++) {
         const quartet=[anchor,pool[i],pool[j],pool[k]];
+        if(Array.isArray(excluded)&&quartet.every(p=>excluded.includes(p.id))) continue;
         if (quartet.some(p=>p.paired_roster_id&&!quartet.some(q=>q.id===p.paired_roster_id))) continue;
         for (let partner=1;partner<4;partner++) {
           const a=[anchor,quartet[partner]],b=quartet.filter((_,i)=>i!==0&&i!==partner),teams=[a,b];
@@ -280,6 +318,7 @@
           const base=mode==='social_mix'?8*partnerRepeats+2*opponentRepeats:8*delta/75+4*gap/350+3*partnerRepeats+2*opponentRepeats;
           const cost=base+quartet.reduce((n,p)=>n+positions.get(p.id),0)-6-quartet.filter(p=>p.games_played===0&&(mode==='social_mix'||p.rated_games<10)).length/2;
           const key=[cost,...(mode==='social_mix'?[partnerRepeats,opponentRepeats]:[delta]),...a.map(p=>p.id),...b.map(p=>p.id)];
+          if(preferred===teamsKey(teams)) return {teams,key,cost,mean_a,mean_b,expected_a:mode==='social_mix'?.5:expected};
           if (!best||compareKeys(key,best.key)<0) best={teams,key,cost,mean_a,mean_b,expected_a:mode==='social_mix'?.5:expected};
         }
       }
@@ -288,7 +327,7 @@
     return null;
   }
 
-  function fill(record,courts=null,rebuild=null,excluded=null) {
+  function fill(record,courts=null,rebuild=null,excluded=null,preferred=null) {
     const s=record.session, mode=s.mode, counts=history(record),messages=[],assigned=[];
     const active=record.games.filter(g=>ACTIVE.includes(g.status));
     if (!rebuild&&mode==='social_mix'&&active.some(g=>g.status==='assigned')) return 'Social Mix: start the planned match before building the next mix.';
@@ -328,7 +367,10 @@
         const group=players[0]?.club_group;
         pools=[...new Set(players.map(p=>p.club_group).filter(Boolean))].filter(g=>g!==group&&group).sort().map(g=>[players.filter(p=>p.club_group===group||p.club_group===g),'club_wars']);
       } else pools=[[players,mode]];
-      const matches=pools.map(([pool,objective])=>choose(pool,counts,objective,excluded)).filter(Boolean).sort((a,b)=>compareKeys(a.key,b.key));
+      const preferredIds=new Set(preferred?.players.map(p=>p.id_roster)||[]);
+      const preferredTeams=preferred?teamsKey(['a','b'].map(side=>preferred.players.filter(p=>p.side===side).map(p=>({id:p.id_roster})))):null;
+      const announced=pools.map(([pool,objective])=>choose(pool.filter(p=>preferredIds.has(p.id)),counts,objective,excluded,preferredTeams)).find(Boolean);
+      const matches=announced?[announced]:pools.map(([pool,objective])=>choose(pool,counts,objective,excluded)).filter(Boolean).sort((a,b)=>compareKeys(a.key,b.key));
       const match=matches[0];
       if (!match) {
         const detail=players.length<4?'need four eligible players':({skill_separated:'need four eligible players in the same skill band',skill_courts:'need four eligible players in the same skill band',winners_losers:'need four available players from a winners or losers group',king_queen:'need four players at this court level',mixed_doubles:'need one self-identified man and woman on each team',club_wars:'need valid group assignments and partner preferences'})[mode]||'no balanced split can include the oldest waiting player';
@@ -350,6 +392,19 @@
     if (rebuild&&!assigned.length) fail('No alternative valid matchup available. The existing Up Next plan was kept.',409);
     if (assigned.length&&!rebuild) audit(record,'courts.assigned',{games:assigned});
     return `Assigned ${assigned.length} court(s). ${messages.join(' ')}`;
+  }
+
+  function advanceCourts(record,planned=[],excluded=null) {
+    for(const game of record.games.filter(g=>g.status==='assigned')) gameAction(record,{id_game:game.id,action:'start'});
+    let started=0;
+    for(let court=1;court<=record.session.court_count;court++) {
+      if(record.games.some(g=>g.court===court&&ACTIVE.includes(g.status))) continue;
+      const preferred=planned.find(game=>(record.session.mode!=='king_queen'||game.court===court)&&game.players.every(gp=>record.players.some(p=>p.id===gp.id_roster&&p.queue_state==='waiting'&&eligible(p))));
+      fill(record,[court],null,excluded,preferred);
+      const game=record.games.find(g=>g.court===court&&g.status==='assigned');
+      if(game) {gameAction(record,{id_game:game.id,action:'start'});started++;}
+    }
+    return started;
   }
 
   function gameAction(record,data) {
@@ -386,8 +441,8 @@
       return 'Up Next rebuilt using current results and queue rules.';
     } else if (action==='cancel') {
       if (!ACTIVE.includes(game.status)) fail('This game is already finished.',409);
-      const reason=text(data.reason,'Cancellation reason',200);
-      game.status='cancelled'; game.completed_at=now(); players.forEach(p=>p.queue_state='waiting');
+      const reason=text(data.reason||'Cancelled by organizer','Cancellation reason',200);
+      game.status='cancelled'; game.completed_at=now(); players.forEach(p=>enqueue(record,p));
       audit(record,'game.cancelled',{id_game:game.id,reason});
       return '';
     } else fail('Unknown game action.');
@@ -462,8 +517,39 @@
   function mutate(record,action,data) {
     if (record.session.revision!==data.revision) fail('This session changed. Refresh and try again.',409);
     if (record.session.status!=='active') fail('This session is closed.',409);
+    const planned=['game','add-court'].includes(action)?upcoming(record).matches:[];
+    const excluded=action==='game'&&data.action==='cancel'?record.games.find(g=>g.id===data.id_game)?.players.map(p=>p.id_roster):null;
     let notice='';
-    if (action==='import-reviewed') notice=importPlayers(record,data);
+    if (action==='start-session') {
+      if(!advanceCourts(record)) fail('No valid match is ready. Check in at least four players and review the selected matching mode.',409);
+      notice='Session started. Available courts fill automatically.';
+    } else if (action==='add-court') {
+      if(record.session.court_count>=8) fail('A session supports at most 8 courts.',409);
+      record.session.court_count+=1;
+      audit(record,'court.added',{court:record.session.court_count});
+    } else if (action==='configure') {
+      if (record.games.length) fail('Session settings are locked after preparing the first game.',409);
+      const name=text(data.name??record.session.name,'Session name');
+      const court_count=integer(data.court_count??record.session.court_count,'Courts',1,8);
+      const max_players=integer(data.max_players??record.session.max_players,'Capacity',4,200);
+      const mode=data.mode??record.session.mode;
+      if (!MODES.includes(mode)) fail('Choose a supported play mode.');
+      if (max_players<record.players.filter(p=>p.attendance==='present').length) fail('Capacity cannot be less than the checked-in player count.',409);
+      Object.assign(record.session,{name,court_count,max_players,mode});
+      audit(record,'session.configured',{court_count,max_players,mode});
+    } else if (action==='checkin-confirmed') {
+      if (!Array.isArray(data.id_rosters)||!data.id_rosters.length||data.id_rosters.length>200||new Set(data.id_rosters).size!==data.id_rosters.length) fail('Choose distinct players to check in.');
+      const players=data.id_rosters.map(id=>getPlayer(record,id));
+      players.forEach(available);
+      if (record.players.filter(p=>p.attendance==='present').length+players.filter(p=>p.attendance!=='present').length>record.session.max_players) fail('Session capacity is full.',409);
+      for (const player of players) {
+        player.membership='active';player.waiver='valid';
+        if (player.attendance!=='present') checkin(record,player);
+        else if (player.queue_state==='off') enqueue(record,player);
+      }
+      audit(record,'players.checked_in_confirmed',{players:players.length});
+      notice=`Checked in ${players.length} players. They are ready for the queue.`;
+    } else if (action==='import-reviewed') notice=importPlayers(record,data);
     else if (action==='demo') {
       const names=['Avery','Blake','Cameron','Drew','Ellis','Frankie','Gray','Harper','Indigo','Jules','Kai','Lane','Morgan','Noel','Oak','Parker','Quinn','Reese','Sage','Taylor','Uma','Vale','Winter','Xan','Yael','Zion','Alex','Briar','Casey','Devon'];
       const ratings=[1800,1750,1200,1150,1350,1400,1250,1300,1500,1550,1000,1050,1600,1450,1100];
@@ -488,6 +574,7 @@
     else if (action==='reconcile') { const count=reconcile(record); audit(record,'attendance.reconciled',{no_shows:count}); notice=`Marked ${count} absent RSVPs as no-shows. No penalties applied.`; }
     else if (action==='close') notice=close(record);
     else fail('Action not found.',404);
+    if(action!=='start-session'&&record.games.length&&record.session.status==='active') advanceCourts(record,planned,excluded);
     record.session.revision++;
     return notice;
   }
