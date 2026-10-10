@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/develop|refs/heads/staging)
+      echo 'Protected branches change through reviewed pull requests only.' >&2
+      exit 1
+      ;;
+  esac
+  if [ "$local_sha" = 0000000000000000000000000000000000000000 ]; then
+    continue
+  fi
+  case "$remote_ref" in
+    refs/heads/*)
+      printf '%s\n' "$remote_ref" | LC_ALL=C grep -Eq '^refs/heads/(feature|bugfix|hotfix|release|docs)/#[0-9]+$' || {
+        echo 'Use <type>/#<issue-number> for contribution branches.' >&2
+        exit 1
+      }
+      ;;
+  esac
+  if [ "$remote_sha" = 0000000000000000000000000000000000000000 ]; then
+    python3 tools/check_repository.py --range "$local_sha"
+  else
+    python3 tools/check_repository.py --range "$remote_sha..$local_sha"
+  fi
+done

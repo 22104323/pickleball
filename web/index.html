@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="An organizer's local pickleball queue: check players in, rotate courts fairly, and balance doubles teams.">
+  <title>Courtside · Pickleball queue</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Skip to session</a>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Courtside home"><span class="brand-mark" aria-hidden="true">C</span><span>courtside<span class="brand-caption">PICKLEBALL ROTATION</span></span></a>
+    <div class="sidebar-label">Your session</div>
+    <label class="sr-only" for="session-select">Choose session</label>
+    <select id="session-select"><option value="">No sessions yet</option></select>
+    <nav aria-label="Session navigation">
+      <button class="nav-link active" data-view="queue"><span aria-hidden="true">▦</span> Live queue <span id="nav-count" class="count">0</span></button>
+      <button class="nav-link" data-view="attendance"><span aria-hidden="true">◎</span> Attendance</button>
+      <button class="nav-link" data-view="results"><span aria-hidden="true">↗</span> Game results</button>
+      <button class="nav-link" data-view="activity"><span aria-hidden="true">≡</span> Activity</button>
+    </nav>
+    <button class="btn btn-outline sidebar-new" data-open="create-dialog">+ New session</button>
+    <div class="sidebar-bottom"><span class="local-dot" aria-hidden="true"></span><strong>Local organizer workspace</strong><p>Roster in. Fair games out.</p><p class="muted">Reclub connection pending.<br>Import a roster to get started.</p></div>
+  </aside>
+  <div class="main-shell">
+    <header class="topbar"><span>Open play <span class="crumb">/</span> <span id="breadcrumb">Your session</span></span><span class="operator-badge">Organizer</span></header>
+    <main id="workspace" tabindex="-1">
+      <noscript><div class="notice">Enable JavaScript to operate the session workspace. Saved records remain in the local database.</div></noscript>
+      <div id="error" class="error-banner" role="alert" hidden></div>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <section class="page-heading"><div><div class="eyebrow" id="session-date">YOUR NEXT OPEN PLAY</div><h1 id="session-title">Keep the next game fair.</h1><p id="session-subtitle">Check in your players. Let the queue take it from there.</p></div><div class="heading-actions"><button class="btn btn-outline" id="import-button" data-open="import-dialog" disabled>Import roster</button><button class="btn btn-primary" id="fill-button" data-action="fill" disabled>Fill open courts <span aria-hidden="true">↗</span></button></div></section>
+      <div id="summary" class="summary" aria-label="Session summary"></div>
+      <section id="view-content" aria-label="Session workspace"></section>
+      <footer class="workspace-footer"><span>Attendance drives the queue. Balance shapes the game.</span><span id="updated-label">Stored on this computer</span></footer>
+    </main>
+  </div>
+  <dialog id="create-dialog" aria-labelledby="create-title"><form id="create-form"><div class="dialog-heading"><div><span class="eyebrow">START A ROTATION</span><h2 id="create-title">New open-play session</h2></div><button type="button" class="close-dialog" aria-label="Close dialog">×</button></div><p>Set up your courts, then import the roster and check players in.</p><label for="session-name">Session name</label><input id="session-name" name="name" maxlength="120" required placeholder="Saturday open play"><label for="session-start">Starts at</label><input id="session-start" name="starts_at" type="datetime-local" required><div class="form-row"><div><label for="court-count">Courts</label><input id="court-count" name="court_count" type="number" min="1" max="8" value="2" required></div><div><label for="player-capacity">Player capacity</label><input id="player-capacity" name="max_players" type="number" min="4" max="200" value="30" required></div></div><div class="form-error" role="alert"></div><div class="dialog-footer"><button type="button" class="btn btn-outline close-dialog">Cancel</button><button class="btn btn-primary" type="submit">Create session</button></div></form></dialog>
+  <dialog id="import-dialog" aria-labelledby="import-title"><form id="import-form"><div class="dialog-heading"><div><span class="eyebrow">ROSTER IMPORT</span><h2 id="import-title">Bring your players in</h2></div><button type="button" class="close-dialog" aria-label="Close dialog">×</button></div><p>Import an organizer-prepared CSV. This is a local mapping, not a live Reclub connection. Attendance is recorded separately.</p><div class="form-row"><div><label for="roster-source">Source</label><select id="roster-source" name="source"><option value="reclub">Reclub roster</option><option value="manual">Manual roster</option></select></div><div><label for="club-key">Club identifier</label><input id="club-key" name="club_key" placeholder="your-club-id" required maxlength="120"></div></div><label for="csv-file">Choose CSV file</label><input type="file" id="csv-file" accept=".csv,text/csv"><label for="csv-content">Or paste CSV</label><textarea id="csv-content" name="csv" rows="7" required spellcheck="false" placeholder="external_id,name,rsvp,membership,waiver,initial_rating"></textarea><p class="field-help">Required: external_id, name, rsvp, membership, waiver. Optional: initial_rating. Unknown eligibility stays out of the queue. Reimports preserve check-ins and ratings; omitted players are retained.</p><div class="form-error" role="alert"></div><div class="dialog-footer"><button type="button" class="btn btn-outline close-dialog">Cancel</button><button class="btn btn-primary" type="submit">Import roster</button></div></form></dialog>
+  <dialog id="result-dialog" aria-labelledby="result-title"><form id="result-form"><div class="dialog-heading"><h2 id="result-title">Record game result</h2><button type="button" class="close-dialog" aria-label="Close dialog">×</button></div><div id="result-teams"></div><div class="form-row"><div><label for="score-a">Team A score</label><input type="number" id="score-a" name="score_a" min="0" max="99" required></div><div><label for="score-b">Team B score</label><input type="number" id="score-b" name="score_b" min="0" max="99" required></div></div><p class="field-help">Only a finished game counts. Players return to the end of the queue; ratings are finalized when the session closes.</p><div class="form-error" role="alert"></div><div class="dialog-footer"><button type="button" class="btn btn-outline close-dialog">Cancel</button><button type="submit" class="btn btn-primary">Save result</button></div></form></dialog>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><form id="confirm-form"><div class="dialog-heading"><h2 id="confirm-title">Confirm change</h2><button type="button" class="close-dialog" aria-label="Close dialog">×</button></div><p id="confirm-description"></p><div id="cancel-reason-field" hidden><label for="cancel-reason">Reason</label><input id="cancel-reason" maxlength="200" placeholder="Player needs to leave"></div><div class="form-error" role="alert"></div><div class="dialog-footer"><button type="button" class="btn btn-outline close-dialog">Keep session unchanged</button><button type="submit" class="btn btn-primary" id="confirm-submit">Confirm</button></div></form></dialog>
+</body>
+</html>

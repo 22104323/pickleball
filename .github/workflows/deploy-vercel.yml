@@ -1,0 +1,59 @@
+name: Deploy website to Vercel
+
+on:
+  push:
+    branches: [staging, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: deployment checks
+    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: python3 tools/check_repository.py --history
+      - run: python3 -m unittest discover -s tests -v
+      - run: node --check web/app.js
+      - name: Verify hosted data boundary exists
+        run: python3 -m tools.vercel_preflight
+
+  deploy:
+    name: approved deployment
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14'
+      - name: Deploy the reviewed commit and wait for readiness
+        env:
+          DEPLOY_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+          VERCEL_WEBSITE_READY: ${{ vars.VERCEL_WEBSITE_READY }}
+        run: python3 -m tools.deploy_vercel
