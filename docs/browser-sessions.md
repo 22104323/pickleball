@@ -18,9 +18,12 @@ through `python3 -m picklequeue.server` and `web/organizer.html`.
 4. Queue assignment, pairing, game starts, winners, corrections, results, and
    Glicko-2 close run in browser JavaScript. Mutations reread browser storage under
    a Web Lock and compare the session revision. Failed changes are not saved.
-5. The header's **Copy link** exports the current snapshot. Recipients open a copy;
-   edits do not synchronize across phones. Existing copies in the same browser
-   keep their latest local changes instead of being overwritten by an old snapshot.
+5. The header's **Guide me** opens a four-step setup walkthrough: session details,
+   matching mode, players/check-in, and starting play. It highlights the relevant
+   section and supports Next, Back, Skip, and Escape. It replaces the header Copy
+   link control; the landing page still offers Copy link for the generated snapshot.
+   Recipients open independent copies, and edits do not synchronize across phones.
+   Existing browser copies keep their latest changes instead of an old snapshot.
 6. The app rejects an expired session and returns to the landing page. Generate
    another link for a fresh session. Expired local records are removed when accessed
    or when the landing page/new-session flow performs cleanup.

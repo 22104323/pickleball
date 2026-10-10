@@ -23,6 +23,8 @@ let reviewClubKey = 'manual-roster';
 let reviewEventName = '';
 let pairSelection = null;
 let guideStep = -1;
+let sessionGuideStep = -1;
+let sessionGuideFrame = null;
 let firstRender = true;
 let revealObserver = null;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -160,6 +162,72 @@ function guideMarkup() {
   return `<div class="eyebrow">STEP ${guideStep+1} OF ${steps.length}</div><h3>${e(title)}</h3><p>${e(description)}</p><div class="guide-progress" aria-label="Guide step ${guideStep+1} of ${steps.length}">${steps.map((_,index)=>`<span class="${index===guideStep?'active':''}"></span>`).join('')}</div><div class="guide-actions"><button type="button" class="btn btn-small btn-outline" data-guide="skip">Skip</button><button type="button" class="btn btn-small btn-primary" data-guide="next">${guideStep===steps.length-1?'Done':'Next'}</button></div>`;
 }
 
+
+const sessionGuideSteps = [
+  {target:'session',title:'Set up today’s session',description:'Name your session and choose the number of courts. Session settings let you adjust player capacity. Set these before starting play.'},
+  {target:'mode',title:'Choose a matching mode',description:'Balanced uses ratings and recent pairing history. Social Mix rotates partners without ratings. Skill Separated keeps similar levels together, and Winners / Losers groups recent outcomes. More modes & formats has the other options.'},
+  {target:'players',title:'Add players and check them in',description:'Import a pasted list or a public Reclub link, then review the names. Players appear in Not Yet Here. Check them in one by one or use Check in all when they arrive. No login is needed.'},
+  {target:'start',title:'Start play and follow Up Next',description:'With at least four ready players, select Start session. Valid matches automatically take available courts. Up Next shows teammates, opponents, and turns ahead. Record a winner when a game ends; the next valid group advances automatically.'}
+];
+
+function closeSessionGuide(restoreFocus=true) {
+  sessionGuideStep=-1;
+  if(sessionGuideFrame!==null) cancelAnimationFrame(sessionGuideFrame);
+  sessionGuideFrame=null;
+  $('#session-tour')?.remove();
+  if(restoreFocus) $('#session-guide-button')?.focus({preventScroll:true});
+}
+
+function positionSessionGuide() {
+  const tour=$('#session-tour');
+  const target=$(`[data-tour-target="${sessionGuideSteps[sessionGuideStep]?.target}"]`);
+  if(!tour||!target) return;
+  const rect=target.getBoundingClientRect(), gap=12, edge=12;
+  const left=Math.min(innerWidth,Math.max(0,rect.left-5)),top=Math.min(innerHeight,Math.max(0,rect.top-5));
+  const right=Math.max(0,Math.min(innerWidth,rect.right+5)),bottom=Math.max(0,Math.min(innerHeight,rect.bottom+5));
+  const boxes=[[0,0,innerWidth,top],[0,top,left,bottom-top],[right,top,innerWidth-right,bottom-top],[0,bottom,innerWidth,innerHeight-bottom],[left,top,right-left,bottom-top]];
+  tour.querySelectorAll('.tour-shade,.tour-spotlight').forEach((node,index)=>{
+    const [x,y,width,height]=boxes[index];
+    Object.assign(node.style,{left:`${x}px`,top:`${y}px`,width:`${Math.max(0,width)}px`,height:`${Math.max(0,height)}px`});
+  });
+  const card=$('.session-tour-card',tour),width=card.offsetWidth,height=card.offsetHeight;
+  let x=right+gap,y=top;
+  if(x+width>innerWidth-edge) {
+    if(left-width-gap>=edge) x=left-width-gap;
+    else {x=Math.max(edge,Math.min(left,innerWidth-width-edge));y=bottom+gap;if(y+height>innerHeight-edge)y=top-height-gap;}
+  }
+  Object.assign(card.style,{left:`${Math.max(edge,Math.min(x,innerWidth-width-edge))}px`,top:`${Math.max(edge,Math.min(y,innerHeight-height-edge))}px`});
+}
+
+function showSessionGuide(scroll=false) {
+  const step=sessionGuideSteps[sessionGuideStep];
+  if(!step) return closeSessionGuide();
+  let tour=$('#session-tour');
+  if(!tour) {tour=document.createElement('div');tour.id='session-tour';document.body.append(tour);}
+  tour.innerHTML=`${Array.from({length:4},()=>'<div class="tour-shade" aria-hidden="true"></div>').join('')}<div class="tour-spotlight" aria-hidden="true"></div><aside class="session-tour-card" role="dialog" aria-labelledby="session-tour-title" aria-describedby="session-tour-description"><div class="session-tour-heading"><span class="eyebrow">STEP ${sessionGuideStep+1} OF ${sessionGuideSteps.length}</span><button class="btn btn-small btn-outline" data-session-guide="skip">Skip</button></div><h2 id="session-tour-title">${e(step.title)}</h2><p id="session-tour-description">${e(step.description)}</p><div class="guide-actions"><div class="guide-progress" aria-label="Guide step ${sessionGuideStep+1} of ${sessionGuideSteps.length}">${sessionGuideSteps.map((_,index)=>`<span class="${index===sessionGuideStep?'active':''}"></span>`).join('')}</div><div>${sessionGuideStep?'<button class="btn btn-small btn-outline" data-session-guide="back">Back</button> ':''}<button class="btn btn-small btn-primary" data-session-guide="next">${sessionGuideStep===sessionGuideSteps.length-1?'Done':'Next'}</button></div></div></aside>`;
+  if(scroll) $(`[data-tour-target="${step.target}"]`)?.scrollIntoView({block:'nearest',behavior:'instant'});
+  positionSessionGuide();
+  if(scroll) $('[data-session-guide="next"]',tour).focus({preventScroll:true});
+}
+
+async function startSessionGuide() {
+  if(!state) return;
+  if(!browserMode) {openDialog('create-dialog');guideStep=0;$('#guide-panel').innerHTML=guideMarkup();$('#guide-panel').hidden=false;return;}
+  sessionGuideStep=0;
+  if(view!=='setup') await navigate(state.session.id,'setup');
+  showSessionGuide(true);
+}
+
+function scheduleSessionGuidePosition() {
+  if(sessionGuideStep<0||sessionGuideFrame!==null) return;
+  sessionGuideFrame=requestAnimationFrame(()=>{sessionGuideFrame=null;positionSessionGuide();});
+}
+window.addEventListener('resize',scheduleSessionGuidePosition);
+document.addEventListener('scroll',scheduleSessionGuidePosition,true);
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&sessionGuideStep>=0&&!document.querySelector('dialog[open]')) {event.preventDefault();closeSessionGuide();}
+});
+
 function parsePlayerLines(value) {
   const lines=String(value||'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
   if(!lines.length)throw new Error('Paste at least one player name.');
@@ -269,7 +337,7 @@ function navigate(id, nextView = view, replace = false) {
   window.scrollTo({top:0,behavior:'instant'});
   swapConfirmation = null;
   searchTerm = '';
-  load(true);
+  return load(true);
 }
 
 function render(animate = false) {
@@ -281,7 +349,7 @@ function render(animate = false) {
   const hasRequestedLink = route.has('link') || route.has('session');
   $('#landing-message').hidden = !hasRequestedLink || Boolean(state);
   $('#landing-message').textContent = hasRequestedLink && !state ? (browserMode ? 'This session link is unavailable. Open a copied session link or generate a new one.' : 'This session link is not available in this browser. Generate a new link on the original browser.') : '';
-  if ($('#copy-session-link')) $('#copy-session-link').hidden = !state;
+  if ($('#session-guide-button')) $('#session-guide-button').hidden = !state;
   if (swapConfirmation && (swapConfirmation.session !== state?.session.id || swapConfirmation.revision !== state?.session.revision)) swapConfirmation = null;
   const selection = $('#session-select');
   if (selection) selection.innerHTML = (state ? `<option value="${state.session.id}" selected>${e(state.session.name)}${state.session.status==='closed'?' · closed':''}</option>` : '<option value="">No sessions yet</option>') + '<option value="new">+ New session</option>';
@@ -295,6 +363,7 @@ function render(animate = false) {
   $('#fill-button').hidden = browserMode || view !== 'queue';
   if($('#add-court-button')) {$('#add-court-button').hidden=view!=='queue';$('#add-court-button').disabled=busy||!state||closed()||state.session.court_count>=8;}
   if (!state) {
+    closeSessionGuide(false);
     $('#summary').hidden = true;
     $('#fill-button').hidden=true;
     $('#view-content').innerHTML = `<div class="welcome"><div><h2>A fair rotation starts with who’s here.</h2><p>Bring your roster, check players in, and build balanced doubles games. Everyone’s wait matters. Strong players don’t get to stack.</p><button class="btn" data-open="create-dialog">Create your first session <span aria-hidden="true">↗</span></button><span class="welcome-note">Local workspace · no sign-in or installation needed</span></div><div class="welcome-court" aria-hidden="true"></div></div><div class="helper-strip"><strong>Just trying it out?</strong><span>Create a session, then load 30 synthetic demo players.</span></div>`;
@@ -315,6 +384,10 @@ function render(animate = false) {
   $('#updated-label').textContent = browserMode ? `Saved on this device · expires ${new Date(state.expires_at*1000).toLocaleString()}` : `Saved locally · revision ${s.revision}`;
   filterRows();
   revealInitialContent();
+  if(sessionGuideStep>=0) {
+    if(view==='setup'&&state) showSessionGuide();
+    else closeSessionGuide(false);
+  }
 }
 
 function stagedGames() { return state.games.filter(game=>game.status==='assigned').sort((a,b)=>a.court-b.court||a.id-b.id); }
@@ -365,7 +438,7 @@ function setupView() {
   const descriptions={balanced:'Balance teams by rating and avoid recent repeats.',social_mix:'Rotate partners first and spread opponents. Ratings are not used.',skill_separated:'Keep similar skill levels together. A court may wait.',winners_losers:'Winners play winners and losers play losers.',skill_courts:'Give each skill group its own courts.',mixed_doubles:'Requires player categories supplied during import.',king_queen:'Winners move up a court; losers move down.',club_wars:'Teams use the groups assigned during player review.'};
   const modeOption=mode=>`<label class="mode-option ${state.session.mode===mode?'selected':''}"><input type="radio" name="setup-mode" data-setup-setting="mode" value="${mode}" ${state.session.mode===mode?'checked':''} ${started||closed()||mode==='mixed_doubles'?'disabled':''}><span><strong>${e(modeNames[mode])}${mode==='balanced'?' <span class="mode-tag">Recommended</span>':''}</strong><small>${e(descriptions[mode])}</small></span></label>`;
   const playerCard=player=>`<li class="setup-player" data-name="${e(player.name.toLowerCase())}"><div class="setup-player-heading"><strong>${e(player.name)}</strong><span class="chip ${player.attendance==='present'?'active':''}">${player.attendance==='present'?'Checked in':'Not Yet Here'}</span></div><label class="setup-skill">Skill<select data-setup-rating="${player.id}" aria-label="Skill for ${e(player.name)}" ${started||closed()?'disabled':''}><option value="${player.rating}">${e(player.band)} · ${Math.round(player.rating)}</option>${levelOptions.filter(([rating])=>Number(rating)!==player.rating).map(([rating,label])=>`<option value="${rating}">${e(label)}</option>`).join('')}</select></label><div class="setup-player-actions">${!closed()&&(!player.eligible||player.attendance!=='present')?`<button class="btn btn-primary" data-setup-checkin="${player.id}" ${busy?'disabled':''}>${player.attendance==='present'?'Join queue':'Check in'}</button>`:player.attendance==='present'&&!closed()&&!['assigned','playing'].includes(player.queue_state)?playerButton(player,'checkout','Check out'):''}${!started&&!closed()?playerButton(player,'remove','Remove','btn-danger'):''}</div></li>`;
-  return `<div class="setup-page"><section class="setup-progress panel"><h2>${started?'SESSION PLAYERS':'OPEN PLAY IN 60 SECONDS'}</h2><ol><li class="complete"><span>✓</span>Set up session</li><li class="current"><span>2</span>Add players<small>${ready}/4 ready</small></li><li class="${started?'complete':''}"><span>${started?'✓':'3'}</span>Start</li></ol></section><div class="setup-config"><section class="panel setup-card"><div class="setup-setting"><label for="setup-name">Session name</label><input id="setup-name" data-setup-setting="name" maxlength="120" value="${e(state.session.name)}" ${started||closed()?'disabled':''}></div><div class="setup-setting"><label for="setup-courts">Courts</label><div class="court-stepper"><button class="btn btn-outline" data-court-step="-1" aria-label="Fewer courts" ${started||closed()||state.session.court_count<=1?'disabled':''}>−</button><input id="setup-courts" data-setup-setting="court_count" type="number" min="1" max="8" value="${state.session.court_count}" aria-label="Number of courts" ${started||closed()?'disabled':''}><button class="btn btn-outline" data-court-step="1" aria-label="More courts" ${started||closed()||state.session.court_count>=8?'disabled':''}>+</button></div></div></section><details class="panel setup-card setup-options"><summary>Session settings</summary><p>Doubles · ratings finalize when the session closes.</p><label for="setup-capacity">Player capacity</label><input id="setup-capacity" data-setup-setting="max_players" type="number" min="4" max="200" value="${state.session.max_players}" ${started||closed()?'disabled':''}></details><section class="panel setup-card"><h2>Matching mode</h2><div class="mode-picker">${['balanced','social_mix','skill_separated','winners_losers'].map(modeOption).join('')}<details class="more-modes"><summary><span><strong>More modes &amp; formats</strong><small>Skill Courts · Mixed Doubles · King/Queen · Club Wars</small></span></summary>${['skill_courts','mixed_doubles','king_queen','club_wars'].map(modeOption).join('')}</details></div></section></div><section class="panel setup-roster"><div class="setup-roster-heading"><h2>Add players <span class="section-count">(${state.players.length})</span></h2>${!closed()?button('Import player list','data-open="import-dialog"','btn-primary'):''}</div><div class="queue-search"><label class="sr-only" for="player-search">Search players</label><input id="player-search" type="search" placeholder="Search players…" value="${e(searchTerm)}"></div><div class="setup-roster-list">${absent.length?`<div class="setup-group-heading"><h3>Not Yet Here (${absent.length})</h3><button class="btn btn-small btn-primary" data-setup-checkin="all" ${closed()?'disabled':''}>Check in all</button></div><ul class="setup-players">${absent.map(playerCard).join('')}</ul>`:''}${present.length?`<div class="setup-group-heading"><h3>Checked in (${present.length})</h3></div><ul class="setup-players">${present.map(playerCard).join('')}</ul>`:''}${!state.players.length?empty('Your roster starts here','Paste player names or use a public Reclub link. No login needed.',button('Import player list','data-open="import-dialog"','btn-primary')+' '+button('Load demo roster','data-action="demo"')):''}</div></section><div class="setup-start"><span>${ready}/4 ready · ${present.length} checked in</span><button class="btn btn-primary" data-setup-start ${!started&&ready<4?'disabled':''}>${started||closed()?'Back to Live queue':'Start session'}</button></div></div>`;
+  return `<div class="setup-page"><section class="setup-progress panel"><h2>${started?'SESSION PLAYERS':'OPEN PLAY IN 60 SECONDS'}</h2><ol><li class="complete"><span>✓</span>Set up session</li><li class="current"><span>2</span>Add players<small>${ready}/4 ready</small></li><li class="${started?'complete':''}"><span>${started?'✓':'3'}</span>Start</li></ol></section><div class="setup-config"><section class="panel setup-card" data-tour-target="session"><div class="setup-setting"><label for="setup-name">Session name</label><input id="setup-name" data-setup-setting="name" maxlength="120" value="${e(state.session.name)}" ${started||closed()?'disabled':''}></div><div class="setup-setting"><label for="setup-courts">Courts</label><div class="court-stepper"><button class="btn btn-outline" data-court-step="-1" aria-label="Fewer courts" ${started||closed()||state.session.court_count<=1?'disabled':''}>−</button><input id="setup-courts" data-setup-setting="court_count" type="number" min="1" max="8" value="${state.session.court_count}" aria-label="Number of courts" ${started||closed()?'disabled':''}><button class="btn btn-outline" data-court-step="1" aria-label="More courts" ${started||closed()||state.session.court_count>=8?'disabled':''}>+</button></div></div></section><details class="panel setup-card setup-options"><summary>Session settings</summary><p>Doubles · ratings finalize when the session closes.</p><label for="setup-capacity">Player capacity</label><input id="setup-capacity" data-setup-setting="max_players" type="number" min="4" max="200" value="${state.session.max_players}" ${started||closed()?'disabled':''}></details><section class="panel setup-card" data-tour-target="mode"><h2>Matching mode</h2><div class="mode-picker">${['balanced','social_mix','skill_separated','winners_losers'].map(modeOption).join('')}<details class="more-modes"><summary><span><strong>More modes &amp; formats</strong><small>Skill Courts · Mixed Doubles · King/Queen · Club Wars</small></span></summary>${['skill_courts','mixed_doubles','king_queen','club_wars'].map(modeOption).join('')}</details></div></section></div><section class="panel setup-roster" data-tour-target="players"><div class="setup-roster-heading"><h2>Add players <span class="section-count">(${state.players.length})</span></h2>${!closed()?button('Import player list','data-open="import-dialog"','btn-primary'):''}</div><div class="queue-search"><label class="sr-only" for="player-search">Search players</label><input id="player-search" type="search" placeholder="Search players…" value="${e(searchTerm)}"></div><div class="setup-roster-list">${absent.length?`<div class="setup-group-heading"><h3>Not Yet Here (${absent.length})</h3><button class="btn btn-small btn-primary" data-setup-checkin="all" ${closed()?'disabled':''}>Check in all</button></div><ul class="setup-players">${absent.map(playerCard).join('')}</ul>`:''}${present.length?`<div class="setup-group-heading"><h3>Checked in (${present.length})</h3></div><ul class="setup-players">${present.map(playerCard).join('')}</ul>`:''}${!state.players.length?empty('Your roster starts here','Paste player names or use a public Reclub link. No login needed.',button('Import player list','data-open="import-dialog"','btn-primary')+' '+button('Load demo roster','data-action="demo"')):''}</div></section><div class="setup-start" data-tour-target="start"><span>${ready}/4 ready · ${present.length} checked in</span><button class="btn btn-primary" data-setup-start ${!started&&ready<4?'disabled':''}>${started||closed()?'Back to Live queue':'Start session'}</button></div></div>`;
 }
 
 async function createSetupSession() {
@@ -476,6 +549,12 @@ function openDialog(id) {
 document.addEventListener('click', event=>{
   const target = event.target.closest('button');
   if(!target || busy || target.disabled) return;
+  if(target.dataset.sessionGuide) {
+    const action=target.dataset.sessionGuide;
+    if(action==='start') {startSessionGuide().catch(error=>message(error.message,true));return;}
+    if(action==='skip'||action==='next'&&sessionGuideStep===sessionGuideSteps.length-1) return closeSessionGuide();
+    sessionGuideStep+=action==='back'?-1:1;showSessionGuide(true);return;
+  }
   if(target.classList.contains('close-dialog')) return target.closest('dialog').close();
   if(target.dataset.guide) {
     if(target.dataset.guide==='start')guideStep=0;
@@ -643,14 +722,7 @@ $('#copy-generated-link')?.addEventListener('click',async()=>{
   try { await copyLink($('#generated-link').value,text=>{ $('#landing-message').textContent=text; $('#landing-message').hidden=false; }); }
   catch (error) { $('#generated-link').select(); $('#landing-message').textContent=error.message; $('#landing-message').hidden=false; }
 });
-$('#copy-session-link')?.addEventListener('click',async()=>{
-  if (!state||busy) return;
-  try {
-    const shared=await window.CourtsideBrowser.share(state.session.id);
-    const url=view==='setup'?setupLink(shared):shared;
-    await copyLink(url,()=>message('Current session link copied. Other devices open a copy of this snapshot; subsequent changes stay on each device.'));
-  } catch (error) { message(error.message,true); }
-});
+
 document.querySelectorAll('.mode-picker input[name="mode"]').forEach(input=>input.addEventListener('change',()=>{
   document.querySelectorAll('.mode-option').forEach(option=>option.classList.toggle('selected',option.querySelector('input')?.checked));
   const notes={balanced:'Ratings and recent history guide each balanced doubles matchup.',social_mix:'Social Mix minimizes repeat partners and spreads opponents. Ratings are not used.',skill_separated:'Players are grouped by their current rating band; a court may wait for four.',winners_losers:'Recent winners and losers rotate within their groups. New players can join either group.',skill_courts:'Open courts draw from separate skill bands, starting with the largest ready group.',mixed_doubles:'Set each player’s category during roster review. Names are never used to infer it.',king_queen:'Winners target a higher court and losing players target a lower court.',club_wars:'Assign every player to Group A or Group B during roster review.'};
@@ -719,9 +791,9 @@ window.addEventListener('popstate',()=>{searchTerm='';load(true);});
 window.addEventListener('hashchange',()=>{searchTerm='';load(true);});
 window.addEventListener('pageshow',event=>{if(event.persisted)load();});
 let refreshTimer = setInterval(()=>{
-  if(document.hidden||busy||swapConfirmation||$('dialog[open]')||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))return;
+  if(document.hidden||busy||sessionGuideStep>=0||swapConfirmation||$('dialog[open]')||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))return;
   load();
 },30000);
-window.addEventListener('pagehide',()=>{clearReveals();clearInterval(refreshTimer);refreshTimer=null;});
-window.addEventListener('pageshow',()=>{if(!refreshTimer)refreshTimer=setInterval(()=>{if(!document.hidden&&!busy&&!swapConfirmation&&!$('dialog[open]')&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))load();},30000);});
+window.addEventListener('pagehide',()=>{closeSessionGuide(false);clearReveals();clearInterval(refreshTimer);refreshTimer=null;});
+window.addEventListener('pageshow',()=>{if(!refreshTimer)refreshTimer=setInterval(()=>{if(!document.hidden&&!busy&&sessionGuideStep<0&&!swapConfirmation&&!$('dialog[open]')&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))load();},30000);});
 load();
