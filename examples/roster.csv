@@ -1,0 +1,5 @@
+external_id,name,rsvp,membership,waiver,initial_rating
+sample-a,Player A (sample),yes,active,valid,1800
+sample-b,Player B (sample),yes,active,valid,1750
+sample-c,Player C (sample),yes,active,valid,1200
+sample-d,Player D (sample),yes,active,valid,1150
