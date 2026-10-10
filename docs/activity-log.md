@@ -417,3 +417,22 @@
   was verified. The hosted page is not live; do not approve this run until those settings,
   event selection, and public attendee-display approval are complete.
 - No live Vercel runtime, Reclub feed, or production page check was performed.
+
+
+## 2026-10-10 — Restore the approved organizer entry page (in progress)
+
+- User confirmed the full green Courtside organizer layout, manual/Reclub roster import, Vercel-only hosting, no accounts, no paid backend, no server roster storage, and 48-hour session links.
+- Restored `web/index.html` from the existing organizer UI; the attendee-only entry page and its Refresh sign-ups button are removed from that source page. The screenshot design and existing organizer styles are preserved.
+- This source correction is not deployed: the current browser script calls the loopback Python queue API. Browser execution of queue/matching/results needs approval and implementation before this page can be released on Vercel. Existing deployment preflight continues to reject a page that is not wired to its approved hosted runtime.
+- Direct public Reclub event/profile requests returned HTTP 200 without credentials; CORS response and preflight headers allowed the deployed origin. No personal responses were saved or printed. Shared live editing and server-enforced link expiry are not implemented.
+
+
+## 2026-10-10 — Approved browser runtime and original Courtside UI
+
+- User explicitly approved moving queue, matching, and results to browser JavaScript while preserving Image #1, direct Reclub imports, Vercel-only hosting, no accounts, no paid service, and no server roster database.
+- Implemented `web/browser-engine.js` with isolated browser sessions, roster review, eligibility/check-in, paired players, eight matching modes, starts, winners, corrections, rebuild, cancellation, standings, and session-close Glicko-2. The Python/SQLite local organizer remains available. Each browser session has independent history/ratings.
+- Landing generates a 48-hour link with an explicit URL, Copy link, and Open Courtside. Header Copy link shares a compressed current snapshot. Other devices open independent copies; no shared live edits are claimed. Expiry is an app rule, not secure server revocation. Snapshot imports validate roster/game relationships and bound decompression to 2 MB.
+- Hosted page loads the original organizer styles; retired attendee UI/API are excluded from Vercel. No fixed event setting or Refresh sign-ups button remains in the hosted entry page. Direct public Reclub requests omit credentials and preserve separate guests.
+- Syntax checks, whitespace check, and browser-hosting preflight passed. Desktop (1920×934) and mobile (390×844) previews used a synthetic empty session; Chromium showed the original green header/queue and no page errors. No queue behavioral test suite was added or run locally. Existing preflight fixture assertions were updated for the changed runtime; CI remains required.
+- Not yet deployed or claimed live. Deployment settings and the exact READY commit still need confirmation.
+- The requested real Reclub browser check succeeded from the local preview: 70 confirmed slots, 70 unique slot identities, including 3 unnamed guests; approximately 1.02 seconds. Preview did not save a session record, real roster, response, or screenshot. Public deployment settings remain empty; no local Vercel credentials/project metadata were found.

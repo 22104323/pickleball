@@ -27,6 +27,7 @@ let firstRender = true;
 let revealObserver = null;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const SESSION_LINKS_KEY = 'courtside.session-links.v1';
+const browserMode = document.body.dataset.runtime === 'browser';
 
 function sessionLinks() {
   try {
@@ -43,6 +44,11 @@ function randomLinkToken() {
 }
 
 function sessionLinkFor(id) {
+  if (browserMode) {
+    const token = window.CourtsideBrowser?.tokenFor(Number(id));
+    if (!token) throw new Error('This session is unavailable or expired. Generate a new link.');
+    return token;
+  }
   const links = sessionLinks();
   const existing = Object.entries(links).find(([,sessionId])=>Number(sessionId)===Number(id));
   if (existing) return existing[0];
@@ -56,6 +62,7 @@ function sessionLinkFor(id) {
 }
 
 function sessionIdForLink(token) {
+  if (browserMode) return window.CourtsideBrowser?.tokenFor(sessions[0]?.id) === token ? sessions[0].id : null;
   const id = Number(sessionLinks()[token]);
   return Number.isSafeInteger(id) && sessions.some(session=>session.id===id) ? id : null;
 }
@@ -190,6 +197,10 @@ function errorFor(dialog) {
 }
 
 async function api(path, data) {
+  if (browserMode) {
+    if (!window.CourtsideBrowser) throw new Error('The browser queue could not load. Refresh this page.');
+    return window.CourtsideBrowser.request(path,data);
+  }
   const response = await fetch(path, data === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   const payload = await response.json();
   if (!response.ok) {
@@ -225,6 +236,12 @@ function syncNavigation() {
 async function load(animate = false) {
   const sequence = ++loadSequence;
   try {
+    if (browserMode) {
+      if (!window.CourtsideBrowser) throw new Error('The browser queue could not load. Refresh this page.');
+      const route = new URLSearchParams(location.hash.slice(1));
+      await window.CourtsideBrowser.open(route.get('link'),route.get('snapshot'));
+      if (sequence !== loadSequence) return;
+    }
     const listed = await api('/api/sessions');
     if (sequence !== loadSequence) return;
     sessions = listed.sessions;
@@ -233,7 +250,14 @@ async function load(animate = false) {
     if (sequence !== loadSequence) return;
     state = next;
     render(animate);
-  } catch (error) { if(sequence===loadSequence) message(error.message,true); }
+  } catch (error) {
+    if (sequence !== loadSequence) return;
+    if (browserMode) {
+      state=null; sessions=[]; render();
+      $('#landing-message').textContent=error.message;
+      $('#landing-message').hidden=false;
+    } else message(error.message,true);
+  }
 }
 
 function navigate(id, nextView = view, replace = false) {
@@ -252,7 +276,8 @@ function render(animate = false) {
   const route = new URLSearchParams(location.hash.slice(1));
   const hasRequestedLink = route.has('link') || route.has('session');
   $('#landing-message').hidden = !hasRequestedLink || Boolean(state);
-  $('#landing-message').textContent = hasRequestedLink && !state ? 'This session link is not available in this browser. Generate a new link on the original browser.' : '';
+  $('#landing-message').textContent = hasRequestedLink && !state ? (browserMode ? 'This session link is unavailable. Open a copied session link or generate a new one.' : 'This session link is not available in this browser. Generate a new link on the original browser.') : '';
+  if ($('#copy-session-link')) $('#copy-session-link').hidden = !state;
   if (swapConfirmation && (swapConfirmation.session !== state?.session.id || swapConfirmation.revision !== state?.session.revision)) swapConfirmation = null;
   const selection = $('#session-select');
   selection.innerHTML = (state ? `<option value="${state.session.id}" selected>${e(state.session.name)}${state.session.status==='closed'?' · closed':''}</option>` : '<option value="">No sessions yet</option>') + '<option value="new">+ New session</option>';
@@ -282,7 +307,7 @@ function render(animate = false) {
   $('#summary').innerHTML = metrics.map(([label,value,note])=>`<div class="metric"><div class="metric-label">${e(label)}</div><div class="metric-value">${value}</div><div class="metric-note">${e(note)}</div></div>`).join('');
   $('#view-content').innerHTML = view === 'queue' ? queueView() : view === 'attendance' ? attendanceView() : view === 'results' ? resultsView() : view === 'live' ? liveView() : activityView();
   $('#view-content').classList.toggle('view-enter',animate);
-  $('#updated-label').textContent = `Saved locally · revision ${s.revision}`;
+  $('#updated-label').textContent = browserMode ? `Saved on this device · expires ${new Date(state.expires_at*1000).toLocaleString()}` : `Saved locally · revision ${s.revision}`;
   filterRows();
   revealInitialContent();
 }
@@ -529,11 +554,36 @@ $('#generate-link').addEventListener('click',async()=>{
   button.disabled=true;busy=true;
   try{
     const payload=await api('/api/sessions',{name:'Open Play',starts_at:Date.now()/1000,court_count:1,max_players:30,mode:'balanced'});
+    if (browserMode) {
+      const url=await window.CourtsideBrowser.share(payload.session.id);
+      $('#generated-link').value=url;
+      $('#open-generated-link').href=url;
+      $('#generated-link-row').hidden=false;
+      $('#landing-message').textContent='Your session link expires in 48 hours. Open it to choose a format and add players.';
+      $('#landing-message').hidden=false;
+      return;
+    }
     const token=sessionLinkFor(payload.session.id);
     navigate(payload.session.id,'queue',true);
     try{await navigator.clipboard?.writeText(`${location.origin}${location.pathname}${location.search}#link=${encodeURIComponent(token)}&view=queue`);}catch{}
   }catch(error){$('#landing-message').textContent=error.message;$('#landing-message').hidden=false;}
   finally{busy=false;button.disabled=false;}
+});
+async function copyLink(url,feedback) {
+  if (!navigator.clipboard) throw new Error('Copy is unavailable in this browser. Select the link and copy it manually.');
+  await navigator.clipboard.writeText(url);
+  feedback('Link copied.');
+}
+$('#copy-generated-link')?.addEventListener('click',async()=>{
+  try { await copyLink($('#generated-link').value,text=>{ $('#landing-message').textContent=text; $('#landing-message').hidden=false; }); }
+  catch (error) { $('#generated-link').select(); $('#landing-message').textContent=error.message; $('#landing-message').hidden=false; }
+});
+$('#copy-session-link')?.addEventListener('click',async()=>{
+  if (!state||busy) return;
+  try {
+    const url=await window.CourtsideBrowser.share(state.session.id);
+    await copyLink(url,()=>message('Current session link copied. Other devices open a copy of this snapshot; subsequent changes stay on each device.'));
+  } catch (error) { message(error.message,true); }
 });
 document.querySelectorAll('.mode-picker input[name="mode"]').forEach(input=>input.addEventListener('change',()=>{
   document.querySelectorAll('.mode-option').forEach(option=>option.classList.toggle('selected',option.querySelector('input')?.checked));

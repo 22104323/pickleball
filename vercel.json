@@ -4,18 +4,29 @@
   "installCommand": "",
   "buildCommand": "python3 -m tools.vercel_preflight",
   "outputDirectory": "web",
-  "functions": {
-    "api/attendees.py": { "maxDuration": 45 }
+  "git": {
+    "deploymentEnabled": false
   },
-  "git": { "deploymentEnabled": false },
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://assets.reclub.co https://d1upr18ac2olqz.cloudfront.net; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://assets.reclub.co https://d1upr18ac2olqz.cloudfront.net; connect-src 'self' https://api.reclub.co; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+        }
       ]
     }
   ]

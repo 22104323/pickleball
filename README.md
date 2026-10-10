@@ -1,6 +1,6 @@
 # Reclub Integration — Attendance, Ratings, Anti-Stacking Balance
 
-Courtside is a local organizer workspace for pickleball open play. Check in the
+Courtside is an organizer workspace for pickleball open play. Check in the
 players who are physically present, build balanced doubles games, and keep the
 rotation moving without pairing the strongest two against the weakest two when
 a better valid split is available.
@@ -9,21 +9,22 @@ a better valid split is available.
 
 ## Current status
 
-This repository now contains a working local MVP, not a deployed club service.
-It uses Python's standard library, SQLite, and plain HTML/CSS/JavaScript. There
-are no runtime packages to install and no build step.
+This repository contains a Python/SQLite local organizer and a browser JavaScript
+organizer for static Vercel hosting. Both use the existing plain HTML/CSS interface.
+There are no runtime packages to install. Hosted sessions stay on the user's device;
+the currently deployed attendee-only page still needs the corrected release.
 
 | Available now | Pending |
 | --- | --- |
 | Session creation, court count, capacity, and eight play modes | Supported Reclub API/webhook contract and hosted live sync |
-| Pasted player lists, local Reclub preview, and a gated read-only single-event website feed | Supported Reclub developer contract, verified export format, and upstream write-back |
+| Pasted player lists and direct public Reclub imports in the browser | Supported Reclub developer contract, verified export format, and upstream write-back |
 | Separate RSVP, attendance, eligibility, and queue states | Payments, guests, division policies, and notification integrations |
 | Manual check-in, late-arrival tracking, pause, rejoin, and check-out | Attendance reliability rewards and approved future-session penalties |
 | Transactional mode-aware court assignment, partner preferences, starts, corrections, and Rebuild | Winner-stays, manual match editing, and multi-court swap optimization |
 | Recent partner/opponent costs and a small first-game newcomer bonus | Full fairness dashboard and calibrated match-quality metrics |
 | Session-close Glicko-2 periods, rating history, and audit records | Empirical validation of the individual doubles adaptation |
-| Responsive organizer interface, local Live View, reduced-motion support, and random same-browser session links | Hosted organizer authentication, authorization, and multi-organizer access |
-| GitHub review rules, CI checks, and a gated Vercel deployment workflow | Vercel connection, approval to publish a selected event's attendee fields, and hosted organizer access controls |
+| Responsive organizer interface, local Live View, reduced-motion support, and 48-hour browser sessions with copied snapshot links | Hosted organizer authentication, authorization, and multi-organizer access |
+| GitHub review rules, CI checks, and a gated Vercel deployment workflow | Deploying the corrected browser entry page and shared live editing |
 
 ## Contributions and deployment
 
@@ -35,13 +36,14 @@ required because there is no independent reviewer. Development and staging branc
 are kept in a private companion workspace; public releases land on `main`. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Public staging and production deployments require a separate owner approval. The
-read-only attendee endpoint and hosted page are implemented, but the Vercel workflow
-is still **not live**: the Vercel project is not connected, no event is configured,
-and public display of attendee names and avatars has not been approved. The workflow
-continues to block deployment until those checks are complete. [Deployment setup and
-Reclub findings](docs/deployment.md) describe the settings, prerequisites, and
-limitations. The local organizer continues to work independently.
+The Vercel entry page now uses the original green organizer UI and runs the
+queue, matching, and results in the user's browser. Users generate a 48-hour
+session link, import players manually or directly from a public Reclub link, and
+operate without accounts or a hosted database. Copied links contain snapshots;
+edits on different devices do not synchronize. The existing public deployment
+still serves the previous attendee-only page until the corrected commit deploys.
+See [browser sessions](docs/browser-sessions.md) for expiry, storage, sharing,
+and [deployment setup](docs/deployment.md) for the protected release workflow.
 
 `.env` files, credentials, databases, and local Vercel metadata are ignored and
 checked before commits/pushes. `.gitignore` and `.vercelignore` themselves are public
@@ -77,8 +79,8 @@ is kept in this browser's local storage. The link works in the same browser prof
 the same origin only; it is not an account, a password, or cross-device sharing. Clearing
 browser storage loses the link mapping. Session records remain in the local SQLite
 database across server restarts; they are not uploaded to a hosted session store. The
-local server serves the organizer at `/` and `/index.html`. Vercel serves a separate
-read-only attendee page and excludes the organizer page and its JavaScript.
+local server serves the organizer at `/` and `/index.html`. Vercel serves the browser organizer described in [browser sessions](docs/browser-sessions.md);
+its queue data is separate from the local SQLite database.
 The organizer landing screen uses a locally served Patrick Hand font; its SIL Open Font License
 is included in [web/fonts/OFL.txt](web/fonts/OFL.txt).
 
@@ -126,11 +128,10 @@ guarantee. The supplied club-slug endpoint returned 404. The participant records
 did not contain an explicit check-in field; sign-ups must not become automatic
 physical attendance. Guest slots remain separate from an inviter's profile. Review
 the roster before adding it; only selected player names, IDs, and optional organizer
-fields are written to this computer's SQLite session database. A separate read-only
-Vercel feed is implemented for one event selected with `RECLUB_EVENT_REF`; it does not
-write to SQLite. It is not live until an actual public event is selected and the owner
-confirms that publishing its attendee names and approved avatar URLs is appropriate.
-See [the observed response shape and deployment plan](docs/deployment.md).
+fields are written to this computer's SQLite session database. The hosted browser
+runtime imports public Reclub players directly and keeps its
+session data on the device. No fixed event configuration or app login is required.
+See [browser session behavior](docs/browser-sessions.md).
 
 | Concept | Current representation | Authority |
 | --- | --- | --- |
@@ -150,10 +151,9 @@ before treating them as available upstream facts.
 The local preview includes account profiles when available and named guest slots
 when the observed event response supplies a guest name. Unnamed guests are labelled
 for organizer review; they are not represented as the inviting member. Local imports
-do not copy avatars, phone numbers, or email addresses. The hosted feed may display
-only profile names and HTTPS avatar URLs from two allow-listed Reclub image hosts,
-along with event title, participant-slot ID, and status 1. It does not persist a
-roster. A sign-up is not a check-in; attendance remains a local organizer record.
+do not copy avatars, phone numbers, or email addresses. Hosted imports likewise
+retain reviewed player fields only on the device and use the existing initials
+avatars. RSVP is not a check-in; the organizer confirms physical attendance.
 
 ### CSV input
 
@@ -533,13 +533,14 @@ picklequeue/
   schema.sql     SQLite tables, constraints, and indexes
   server.py      loopback HTTP server and JSON boundary
 web/
-  index.html     public read-only Reclub attendee page for Vercel
+  index.html     full browser organizer entry page for Vercel
   organizer.html local organizer UI and native dialogs
-  attendees.js   same-origin attendee feed display
+  browser-engine.js browser queue, ratings, link snapshots, and Reclub import
+  attendees.js   retired attendee feed (excluded from Vercel)
   styles.css     responsive layout, feedback, reduced-motion handling
   app.js         API interactions, navigation, forms, and polling cleanup
   favicon.svg
-api/attendees.py read-only Vercel function for one configured event
+api/attendees.py retired attendee function (excluded from Vercel)
 examples/roster.csv
 tests/test_engine.py
 tests/browser-smoke.cjs
