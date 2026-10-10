@@ -2,7 +2,7 @@
 
 ## 2026-10-10 — Local pickleball queue MVP
 
-- Sprint: unassigned. Issue: unassigned.
+- Sprint: unassigned. Issue: #1.
 - Inspected the existing `22104323/pickleball` repository at
   `46af7c370b9d6e0cb5fb444450158e0f31b4a91c`; it contained only `README.md` and no
   implementation, dependencies, or project-specific agent instructions.
@@ -372,3 +372,36 @@
   This is a GitHub source release, not a deployed website.
 - Corrected the deployment guide's public merge-method statement to match the active
   merge-only ruleset and recorded the final branch/deployment status in this entry.
+
+
+## 2026-10-10 — Read-only Vercel attendee feed (sprint unassigned)
+
+- Sprint: unassigned. Issue: #1.
+
+- Implemented a no-database Vercel Python endpoint and a separate public attendee page.
+  The local loopback organizer continues to serve its original page at `/` and
+  `/index.html`; Vercel excludes that page and its mutation-capable browser script.
+- The hosted route selects one event only through `RECLUB_EVENT_REF`; it rejects query
+  parameters, supports GET only, caps event/profile response sizes and batches, rejects
+  upstream redirects, retries 429 responses once with a one-second maximum wait, and
+  returns an allow-listed event title, status 1, slot ID, display name, validated
+  Reclub CDN avatar, timestamp, and static partial-data warnings. Successful responses
+  use short-lived Vercel CDN
+  caching; errors are not cached. Its 45-second function budget covers the bounded
+  five-request worst case. The route does not persist data or expose organizer mutations.
+- Added tests for slot preservation, status/type filtering, profile batching and gaps,
+  avatar URL validation, bounded 429 retry, query rejection, write-method rejection,
+  caching headers, and fail-closed preflight behavior. Updated README and deployment
+  guidance, including staging/production readiness order.
+- Verification: the matching implementation in the private checkout passed all 79
+  Python tests after rerunning with approved loopback access. In this public `main` clone,
+  `python3 -m tools.vercel_preflight`, Python compileall, Node 26.10.0 syntax checks for
+  `web/attendees.js` and `web/app.js`, `vercel.json` parsing, repository safety scan, and
+  `git diff --check` passed. The suite was not rerun in this public clone.
+- Browser inspection rendered the hosted page with a mocked feed and four synthetic names; the screenshot is in
+  `docs/screenshots/vercel-attendee-feed.png`.
+- Not verified: Vercel CLI packaging, the live Vercel Python beta runtime, live Reclub responses, or a deployed page.
+  No event is configured. Before deployment, the owner
+  must select the actual public event and approve publishing its names/avatar URLs, set
+  the Vercel event reference, complete source review, and then use the existing protected
+  staging and production gates. No Vercel deployment was performed.

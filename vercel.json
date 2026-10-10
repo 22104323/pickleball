@@ -4,6 +4,9 @@
   "installCommand": "",
   "buildCommand": "python3 -m tools.vercel_preflight",
   "outputDirectory": "web",
+  "functions": {
+    "api/attendees.py": { "maxDuration": 45 }
+  },
   "git": { "deploymentEnabled": false },
   "headers": [
     {

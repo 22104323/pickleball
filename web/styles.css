@@ -1493,6 +1493,41 @@ main.landing-page[hidden] { display:none; }
 
 .standings-panel .table-wrap { max-height: 420px; overflow: auto; }
 
+.feed-page { min-height:100vh; background:#fff; }
+.public-feed { width:calc(100% - 32px); max-width:760px; margin:0 auto; padding:44px 0 32px; }
+.feed-page .skip-link { display:block; }
+.feed-header { display:flex; justify-content:space-between; align-items:baseline; gap:16px; margin-bottom:26px; }
+.feed-brand { color:#171717; font:400 21px/1.25 "Patrick Hand","Comic Sans MS","Chalkboard","Segoe Print","Bradley Hand",cursive; letter-spacing:.06em; }
+.feed-kicker,.feed-eyebrow { color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.11em; }
+.feed-card { overflow:hidden; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:var(--shadow); }
+.feed-card-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 24px; border-bottom:1px solid var(--line); background:#fbfcf9; }
+.feed-card-heading h1 { margin-top:7px; font-size:clamp(22px,4vw,30px); letter-spacing:-.8px; }
+.feed-count { margin-top:6px; color:var(--muted); font-size:13px; }
+.feed-refresh { flex:0 0 auto; min-height:42px; padding:9px 13px; border:1px solid #cfd8cc; border-radius:9px; background:#fff; color:var(--ink); font-size:12px; font-weight:600; }
+.feed-refresh:hover:not(:disabled) { background:#f1f4ed; }
+.feed-status { padding:0 24px; color:var(--muted); font-size:12px; line-height:1.55; }
+.feed-status.is-warning { color:#8b4a0a; }
+.feed-status:not(:empty) { padding-top:14px; }
+.feed-empty { margin:12px 24px 22px; color:var(--muted); font-size:13px; }
+.signup-list { list-style:none; margin:0; padding:0; }
+.signup-row { display:grid; grid-template-columns:42px minmax(0,1fr) auto; align-items:center; gap:13px; min-height:68px; padding:11px 24px; border-bottom:1px solid #edf0ea; }
+.signup-row:last-child { border-bottom:0; }
+.signup-avatar { display:grid; width:42px; height:42px; place-items:center; overflow:hidden; border-radius:50%; background:#e9efdf; color:var(--green); font-size:12px; font-weight:700; }
+.signup-avatar img { width:100%; height:100%; object-fit:cover; }
+.signup-name { min-width:0; color:var(--ink); font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+.signup-status { padding:5px 9px; border-radius:999px; background:#edf5e4; color:#31542e; font-size:10px; font-weight:650; white-space:nowrap; }
+.feed-note { display:grid; gap:5px; margin-top:15px; color:var(--muted); font-size:11px; line-height:1.55; }
+@media(max-width:520px) {
+  .public-feed { width:calc(100% - 24px); padding-top:28px; }
+  .feed-header { margin-bottom:18px; }
+  .feed-card-heading { align-items:flex-start; flex-direction:column; padding:18px; }
+  .feed-refresh { width:100%; }
+  .feed-status { padding-right:18px; padding-left:18px; }
+  .signup-row { grid-template-columns:38px minmax(0,1fr) auto; gap:10px; padding:10px 14px; }
+  .signup-avatar { width:38px; height:38px; }
+  .signup-name { font-size:13px; }
+}
+
 /* The session workspace follows the court / queue / upcoming-match reference. */
 .session-header {background:var(--green);color:white;padding:12px max(24px,calc((100% - 1092px)/2));border-bottom:1px solid #123e2e}
 .header-row {display:flex;align-items:center;gap:14px;flex-wrap:wrap}

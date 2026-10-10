@@ -18,3 +18,5 @@ test-artifacts
 docs
 examples
 node_modules
+web/organizer.html
+web/app.js

@@ -45,7 +45,7 @@ def serve(engine, port=8080):
                     except ValueError:
                         raise Problem('Session not found.', 404)
                     return self.send(200, engine.state(id_session))
-                assets = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/favicon.svg':'favicon.svg', '/fonts/patrick-hand-latin.woff2':'fonts/patrick-hand-latin.woff2'}
+                assets = {'/': 'organizer.html', '/index.html': 'organizer.html', '/organizer.html':'organizer.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/favicon.svg':'favicon.svg', '/fonts/patrick-hand-latin.woff2':'fonts/patrick-hand-latin.woff2'}
                 if path not in assets:
                     raise Problem('Page not found.', 404)
                 file = WEB / assets[path]
