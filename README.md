@@ -75,7 +75,10 @@ and check players in; then **Fill open courts**. Start each game explicitly,
 choose **Team 1 Wins** or **Team 2 Wins** when finished, and close the session
 to finalize ratings.
 
-On mobile, **+ New session** is also available in the session dropdown.
+Session sections appear as buttons in the left navigation rail on desktop and a compact
+button row on mobile. Individual skill levels are set by clicking a star; arrow keys move
+between levels, and the **Clear** control removes a single player's rating. The bulk
+level dropdown remains available for selected players.
 
 The session workspace uses a compact top header with a navigation menu and session
 selector. Live Courts appear above the rotation: the ordered Queue sits on the left,

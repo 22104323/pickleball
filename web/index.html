@@ -13,13 +13,6 @@
   <a class="skip-link" href="#workspace">Skip to session</a>
   <header class="session-header">
     <div class="header-row">
-      <details class="header-menu"><summary aria-label="Session navigation menu">☰</summary><nav aria-label="Session navigation">
-        <button class="nav-link active" data-view="queue">Live queue <span id="nav-count" class="count" aria-hidden="true">0</span></button>
-        <button class="nav-link" data-view="attendance">Attendance</button>
-        <button class="nav-link" data-view="results">Game results</button>
-        <button class="nav-link" data-view="live">Live View</button>
-        <button class="nav-link" data-view="activity">Activity</button>
-      </nav></details>
       <a class="brand" href="/" aria-label="Courtside home"><span class="brand-mark" aria-hidden="true">C</span><span>courtside</span></a>
       <div class="header-session"><label class="sr-only" for="session-select">Choose session</label><select id="session-select"><option value="">No sessions yet</option></select></div>
       <div class="header-actions"><button class="btn btn-outline" id="import-button" data-open="import-dialog" disabled>Import roster</button><button class="btn btn-outline" data-open="create-dialog">+ New session</button></div>
@@ -27,6 +20,13 @@
     <div id="summary" class="summary" aria-label="Session summary"></div>
   </header>
   <div class="main-shell">
+    <aside class="side-navigation" aria-label="Organizer navigation"><nav aria-label="Session navigation">
+      <button class="nav-link active" data-view="queue" aria-current="page">Live queue <span id="nav-count" class="count" aria-hidden="true">0</span></button>
+      <button class="nav-link" data-view="attendance">Attendance</button>
+      <button class="nav-link" data-view="results">Game results</button>
+      <button class="nav-link" data-view="live">Live View</button>
+      <button class="nav-link" data-view="activity">Activity</button>
+    </nav></aside>
     <main id="workspace" tabindex="-1">
       <noscript><div class="notice">Enable JavaScript to operate the session workspace. Saved records remain in the local database.</div></noscript>
       <div id="error" class="error-banner" role="alert" hidden></div>

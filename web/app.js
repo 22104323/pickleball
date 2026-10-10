@@ -66,9 +66,10 @@ function updateSkillSummary() {
   $('#review-bulk-level option[value="noop"]').textContent = label;
 }
 
-function skillStars(rating) {
-  const count = levelOptions.findIndex(([value])=>value===ratingLevel(rating))+1;
-  return `<span class="skill-stars" aria-hidden="true"><span>${'★'.repeat(count)}</span>${'★'.repeat(6-count)}</span>`;
+function skillStars(rating,index,name) {
+  const selected=levelOptions.findIndex(([value])=>value===ratingLevel(rating));
+  const label=levelOptions[selected]?.[1]||(rating==null?'Set skill':`${rating} rating`);
+  return `<div class="skill-control"><div class="skill-stars" role="radiogroup" aria-label="Skill level for ${e(name)}">${levelOptions.map(([value,option],star)=>`<button type="button" role="radio" class="skill-star ${star<=selected?'is-filled':''}" aria-label="${e(option)}" aria-checked="${star===selected}" tabindex="${star===selected||selected<0&&star===0?'0':'-1'}" data-review-level="${index}" data-rating="${value}">★</button>`).join('')}</div><span class="skill-level-label" aria-live="polite">${e(label)}</span>${rating!=null?`<button type="button" class="skill-clear" data-review-clear="${index}" aria-label="Clear skill for ${e(name)}">Clear</button>`:''}</div>`;
 }
 
 function renderReview() {
@@ -86,8 +87,7 @@ function renderReview() {
     const partner=reviewPairs.find(pair=>pair.includes(player.external_id))?.find(id=>id!==player.external_id);
     const partnerName=reviewDraft.find(item=>item.external_id===partner)?.name;
     const selectedForPair=reviewPairSelection===player.external_id;
-    const levelOptionsHtml=levelOptions.map(([value,label])=>`<option value="${value}" ${ratingLevel(player.rating)===value?'selected':''}>${e(label)}</option>`).join('');
-    return `<article class="review-card ${partner?'paired':''} ${selectedForPair?'selected-for-pair':''}"><div class="review-row"><input class="review-select" type="checkbox" data-review-select="${index}" aria-label="Select ${e(player.name)}" ${player.selected?'checked':''}><input class="review-name" type="text" data-review-name="${index}" aria-label="Player name" maxlength="80" value="${e(player.name)}"><span class="review-badge-wrap">${partner?`<span class="review-pair-badge">Paired: ${e(partnerName||'Player')}</span>`:''}</span>${partner?`<button type="button" class="review-pair-action" data-review-unpair="${e(player.external_id)}">Unpair</button>`:`<button type="button" class="review-pair-action" data-review-pair="${e(player.external_id)}">${selectedForPair?'Choose player':'Pair'}</button>`}<button type="button" class="review-remove" data-review-remove="${index}" aria-label="Remove ${e(player.name)} from this list">×</button></div><div class="review-meta"><small class="review-source">${e(reviewSource==='reclub'?'Reclub sign-up':'New player')}</small><div class="skill-control">${skillStars(player.rating)}<select data-review-level="${index}" aria-label="Skill level for ${e(player.name)}"><option value="" ${player.rating==null?'selected':''}>Set skill</option>${player.rating!=null&&!ratingLevel(player.rating)?`<option value="${e(player.rating)}" selected>${e(player.rating)} rating</option>`:''}${levelOptionsHtml}</select></div>${state?.session.mode==='club_wars'?`<select data-review-group="${index}" aria-label="Club Wars group for ${e(player.name)}"><option value="" ${!player.club_group?'selected':''}>Choose group</option><option value="A" ${player.club_group==='A'?'selected':''}>Group A</option><option value="B" ${player.club_group==='B'?'selected':''}>Group B</option></select>`:''}</div></article>`;
+    return `<article class="review-card ${partner?'paired':''} ${selectedForPair?'selected-for-pair':''}"><div class="review-row"><input class="review-select" type="checkbox" data-review-select="${index}" aria-label="Select ${e(player.name)}" ${player.selected?'checked':''}><input class="review-name" type="text" data-review-name="${index}" aria-label="Player name" maxlength="80" value="${e(player.name)}"><span class="review-badge-wrap">${partner?`<span class="review-pair-badge">Paired: ${e(partnerName||'Player')}</span>`:''}</span>${partner?`<button type="button" class="review-pair-action" data-review-unpair="${e(player.external_id)}">Unpair</button>`:`<button type="button" class="review-pair-action" data-review-pair="${e(player.external_id)}">${selectedForPair?'Choose player':'Pair'}</button>`}<button type="button" class="review-remove" data-review-remove="${index}" aria-label="Remove ${e(player.name)} from this list">×</button></div><div class="review-meta"><small class="review-source">${e(reviewSource==='reclub'?'Reclub sign-up':'New player')}</small>${skillStars(player.rating,index,player.name)}${state?.session.mode==='club_wars'?`<select data-review-group="${index}" aria-label="Club Wars group for ${e(player.name)}"><option value="" ${!player.club_group?'selected':''}>Choose group</option><option value="A" ${player.club_group==='A'?'selected':''}>Group A</option><option value="B" ${player.club_group==='B'?'selected':''}>Group B</option></select>`:''}</div></article>`;
   }).join('');
   list.scrollTop=scrollTop;
   if(focusAttribute) {
@@ -365,8 +365,6 @@ function openDialog(id) {
 }
 
 document.addEventListener('click', event=>{
-  const menu=$('.header-menu');
-  if(menu.open&&!menu.contains(event.target))menu.open=false;
   const target = event.target.closest('button');
   if(!target || busy || target.disabled) return;
   if(target.classList.contains('close-dialog')) return target.closest('dialog').close();
@@ -382,6 +380,27 @@ document.addEventListener('click', event=>{
     document.querySelectorAll('[data-import-pane]').forEach(pane=>pane.hidden=pane.dataset.importPane!==importTab);
     $('#review-players-button').textContent=importTab==='reclub'?'Load players':'Review players';
     $('#import-error').textContent='';return;
+  }
+  if(target.dataset.reviewLevel!==undefined) {
+    const index=Number(target.dataset.reviewLevel),rating=Number(target.dataset.rating);
+    const player=reviewDraft[index];
+    if(player&&levelOptions.some(([value])=>Number(value)===rating)) {
+      player.rating=rating;
+      target.closest('.skill-control').outerHTML=skillStars(rating,index,player.name);
+      updateSkillSummary();
+      $(`[data-review-level="${index}"][aria-checked="true"]`)?.focus({preventScroll:true});
+    }
+    return;
+  }
+  if(target.dataset.reviewClear!==undefined) {
+    const index=Number(target.dataset.reviewClear),player=reviewDraft[index];
+    if(player) {
+      player.rating=null;
+      target.closest('.skill-control').outerHTML=skillStars(null,index,player.name);
+      updateSkillSummary();
+      $(`[data-review-level="${index}"][tabindex="0"]`)?.focus({preventScroll:true});
+    }
+    return;
   }
   if(target.dataset.reviewPair) {
     const id=target.dataset.reviewPair;
@@ -430,7 +449,7 @@ document.addEventListener('click', event=>{
     $(`[data-swap-winner="${id}"]`)?.focus({preventScroll:true});return;
   }
   if(target.dataset.swapConfirm) return mutate('game',{id_game:Number(target.dataset.swapConfirm),action:'swap_winner'});
-  if(target.dataset.view) {menu.open=false;navigate(state?.session.id,target.dataset.view);$('#workspace').focus({preventScroll:true});return;}
+  if(target.dataset.view) {navigate(state?.session.id,target.dataset.view);$('#workspace').focus({preventScroll:true});return;}
   if(target.dataset.open) return openDialog(target.dataset.open);
   if(target.dataset.action) return mutate(target.dataset.action);
   if(target.dataset.player) return mutate('player',{id_roster:Number(target.dataset.player),action:target.dataset.playerAction});
@@ -454,10 +473,6 @@ document.addEventListener('click', event=>{
 });
 
 document.addEventListener('keydown',event=>{
-  if(event.key==='Escape' && $('.header-menu').open && !$('dialog[open]')) {
-    $('.header-menu').open=false;
-    $('.header-menu>summary').focus({preventScroll:true});
-  }
   if(event.key==='Escape' && swapConfirmation && !busy) {
     const id=swapConfirmation.id;swapConfirmation=null;render();
     $(`[data-swap-winner="${id}"]`)?.focus({preventScroll:true});
@@ -510,13 +525,15 @@ $('#review-player-list').addEventListener('change',event=>{
     const player=reviewDraft[Number(target.dataset.reviewSelect)];if(player){player.selected=target.checked;if(!target.checked)reviewPairs=reviewPairs.filter(pair=>!pair.includes(player.external_id));}
     renderReview();return;
   }
-  if(target.dataset.reviewLevel!==undefined) {
-    const rating=target.value===''?null:Number(target.value);
-    reviewDraft[Number(target.dataset.reviewLevel)].rating=rating;
-    target.closest('.skill-control').querySelector('.skill-stars').outerHTML=skillStars(rating);
-    updateSkillSummary();
-  }
   if(target.dataset.reviewGroup!==undefined)reviewDraft[Number(target.dataset.reviewGroup)].club_group=target.value||null;
+});
+$('#review-player-list').addEventListener('keydown',event=>{
+  const target=event.target;
+  if(target.dataset.reviewLevel===undefined||!['ArrowRight','ArrowDown','ArrowLeft','ArrowUp','Home','End'].includes(event.key))return;
+  const radios=[...target.closest('[role="radiogroup"]').querySelectorAll('[data-review-level]')];
+  const index=radios.indexOf(target);
+  const next=event.key==='Home'?0:event.key==='End'?radios.length-1:(index+(event.key==='ArrowRight'||event.key==='ArrowDown'?1:-1)+radios.length)%radios.length;
+  event.preventDefault();radios[next].click();
 });
 $('#review-player-list').addEventListener('input',event=>{
   if(event.target.dataset.reviewName!==undefined){const player=reviewDraft[Number(event.target.dataset.reviewName)];if(player)player.name=event.target.value;}

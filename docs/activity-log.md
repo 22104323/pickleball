@@ -294,3 +294,17 @@
 - Compileall, Node 24 syntax, whitespace, staged repository, and history safety checks
   passed. Read back both active GitHub rulesets: review/check requirements, force/deletion
   blocks, and empty bypass actor lists remain in effect for develop, staging, and main.
+
+
+## 2026-10-10 — Left navigation and direct skill stars (#1, sprint unassigned)
+
+- Removed the header hamburger dropdown and placed the five session destinations as
+  navigation buttons on the left side of the desktop workspace. Tablet layouts use a
+  horizontal button rail; mobile uses a compact five-button row. The session selector,
+  header counts, route history, and selected-page state remain in place.
+- Replaced each player's skill dropdown with six directly clickable, accessible star
+  choices. A click sets the matching skill immediately; arrow/Home/End keys move among
+  radio choices. A per-player Clear button preserves the old ability to unset one rating.
+  The bulk selected-player level dropdown remains.
+- Updated the existing browser smoke script for the new navigation and star control.
+  Tests were not run for this change. Fresh browser screenshots were not captured.
