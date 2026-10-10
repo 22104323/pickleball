@@ -328,7 +328,8 @@
   PR plus `verify` checks remain required, approval count is zero, no bypass actors,
   force pushes, or protected-branch deletion. The private workspace keeps development
   and staging; contributors fork the public repo and open PRs to main. Public legacy
-  development refs are pending retirement after the release is ready.
+  `develop`, `staging`, and feature refs were removed after their history was preserved
+  in the private workspace. `release/#3` is temporary and auto-deletes on merge.
 - Verification: all 69 Python tests passed; repository path/credential checks passed.
   Temporary SQLite and Chrome 150.0.7871.124 profiles confirmed the landing screen,
   UUID link creation, dashboard transition, same-profile reload, and rejection of the
@@ -342,6 +343,12 @@
 - The first GitHub `verify` run caught trailing whitespace carried by the upstream OFL
   text file. Removed whitespace only; the included license wording is unchanged, then
   reran repository checks before pushing the correction.
+- During release readback, both the release repository and its companion were found
+  private, contrary to the user's open-source direction. Restored the release repository
+  to public and kept the development workspace private. Read back the active public main
+  ruleset: PR and `verify` required, zero approval count, and no bypass actors. Closed
+  superseded public PR #2 and removed its `feature/#1` ref plus public `develop` and
+  `staging`. Public PR #4 is the only temporary release branch; its `verify` checks pass.
 - No hosted app deployment was performed. The current Vercel preflight still blocks
   until the hosted Reclub attendee route exists; the local SQLite API is not deployed.
 
