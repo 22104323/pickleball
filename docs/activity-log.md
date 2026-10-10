@@ -114,3 +114,30 @@
   ratings 87.5%, server 48.8%. The 90% target is not achieved/enforced; browser CI and
   coverage instrumentation remain unfinished. Do not equate passing unit CI with them.
 - Commit/push, remote CI, final rule readback, and PR URL verification follow below.
+
+
+### Publication verification
+
+- Published commit `85776fe2bb8c3f4bedb70096eba4ae11f1730691` to `feature/#1`.
+  Created ready-for-review PR #2 targeting develop; issue #1 remains open because
+  hosting/integration is incomplete. Git uses the owner's GitHub no-reply address
+  for new commits; the global Git configuration and seed history were not changed.
+- GitHub push CI run 38012342571 and PR CI run 38012391098 both passed; the required
+  `verify` check is supplied by GitHub Actions app 15368, matching the rulesets.
+  PR state was OPEN, not draft, MERGEABLE, BLOCKED, with REVIEW_REQUIRED.
+- Remote branch SHAs were verified. Main, develop, and staging remain at the original
+  seed; all published project changes are on the feature branch awaiting review.
+  No protected-branch push, bypass, merge, force operation, or deployment occurred.
+- Negative checks passed for local main/develop/staging pushes, invalid contribution
+  branch names, and an explicitly staged synthetic .env in an isolated temporary repo.
+  Top-level Markdown links and the committed history safety scan passed. `.gitignore`
+  stays tracked while private files remain excluded. Only @22104323 has repository access.
+- The installed gh version does not support `pr checks --json`; PR/check-runs APIs
+  provided the successful check state instead. No workflow failure was hidden.
+- A second trusted maintainer/code owner is needed for an enduring two-person review
+  workflow. The owner cannot approve PRs or last pushes attributed to the same account.
+  No additional person was invited without a supplied username and authorized scope.
+- Current Vercel guidance (June 2026 beta) supports WebSockets, including Socket.io;
+  connections are instance-bound/duration-limited and shared realtime state needs a
+  cross-instance design. This does not make Reclub push events available. The referenced
+  Next.js/Postgres/Prisma/Tailwind/Zustand stack has not been adopted or installed.
