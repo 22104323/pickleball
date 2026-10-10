@@ -1,5 +1,10 @@
 # GitHub review and Vercel deployment
 
+> Current product: full green Courtside UI, browser execution, no accounts, no paid
+> backend, no server roster storage, and 48-hour snapshot links. See
+> [browser sessions](browser-sessions.md). The attendee-only feed sections below
+> record the earlier implementation and are superseded by that guide.
+
 ## Repository access and branch rules
 
 The public release repository is `22104323/pickleball`, with `main` as its default
@@ -49,43 +54,32 @@ requires hosted-route preflight before the deployment job can run. The REST clie
 the reviewed Git commit and waits for Vercel READY; queued or failed builds are not
 reported as successful. No deployment dependencies or CLI packages are installed.
 
-The current source includes `api/attendees.py` and a separate read-only hosted page at
-`web/index.html`. Preflight verifies that the page calls only `/api/attendees`, and that
-`.vercelignore` excludes `web/organizer.html` and `web/app.js`. The local organizer API
-remains loopback-only and is not part of the Vercel output. Vercel cannot provide
-persistence for the local SQLite file: its function filesystem is read-only apart from
-temporary scratch space.
-[Vercel SQLite guidance](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel)
+The current hosted source is the full browser organizer at `web/index.html`.
+Preflight verifies browser runtime wiring and excludes `api/` and the local-only
+`web/organizer.html`. The browser fetches Reclub directly and saves queue state on
+the device; no Python function or hosted SQLite database is required. See
+[browser session behavior](browser-sessions.md) and
+[`.vercelignore` documentation](https://vercel.com/docs/deployments/vercel-ignore).
 
-The route uses Vercel's Python function handler format and the standard library; that
-runtime is currently documented as beta. The runtime and cache behavior have not been
-verified in a live Vercel project. Vercel removes `.vercelignore` matches before
-deployment, so the preflight verifies the hosted page and the exclusion rules without
-requiring the ignored organizer files to remain in the Vercel build. See [Vercel Python
-functions](https://vercel.com/docs/functions/runtimes/python), [Vercel cache-control
-headers](https://vercel.com/docs/caching/cache-control-headers), and [`.vercelignore`
-documentation](https://vercel.com/docs/deployments/vercel-ignore).
-
-The only Vercel deployment found is for the initial README-only commit, not the current
-Courtside application. The private staging promotion's deployment workflow failed at
-the hosted-route preflight, so the deployment job was skipped. No current app deployment
-or verified Vercel project connection exists.
+On 2026-10-10 the public URL `https://pickleball-beige-xi.vercel.app/` returned
+HTTP 200 with the previous attendee-only entry page. That deployment exists, but
+the corrected browser organizer is not yet deployed. The production GitHub
+environment has no configured deployment secret/variables in the latest check,
+and no local Vercel credentials/project metadata are available to this agent.
 
 Before enabling deployment:
 
-1. Review the no-database Reclub feed and its tests below. Select the owner's actual
-   public event and confirm that its attendee names and approved avatar URLs may be
-   republished on a public website. The compatibility sample is not the production event.
+1. Review the browser organizer, snapshot sharing, expiry limitations, and direct
+   public Reclub import described in [browser sessions](browser-sessions.md). No
+   event or club is selected by deployment configuration.
 2. Connect the public release repository to a Vercel project, with project root at this repo and
    production branch `main`. Keep automatic deployments disabled in the committed config.
 3. In each protected GitHub environment, store `VERCEL_TOKEN` as a secret; set
    `VERCEL_PROJECT_ID` and optional `VERCEL_TEAM_ID` as variables. Use a token scoped
    to the intended Vercel account/project access. Never put it in source or chat.
-4. Set `RECLUB_EVENT_REF` in the Vercel Preview and Production environments to the
-   selected public event's reference. It is a public event identifier, not an API token.
-   Confirm source privacy, displayed fields, build/runtime behavior, and staging protection.
-   Then set `VERCEL_WEBSITE_READY=true` in the protected GitHub staging environment to
-   allow the first staging deployment.
+4. Review the browser session behavior, direct Reclub imports, build/runtime behavior,
+   and staging protection. Set `VERCEL_WEBSITE_READY=true` in the protected GitHub
+   staging environment to allow deployment. No `RECLUB_EVENT_REF` is required.
 5. Approve the staging deployment and run its live smoke test. After it passes, set
    `VERCEL_WEBSITE_READY=true` in the protected GitHub production environment. Approve
    staging → main and the production deployment separately.
@@ -117,7 +111,7 @@ Observed direct endpoint: [sample event API](https://api.reclub.co/meets/by-ref/
 Official integration questions can go through [Reclub support](https://help.reclub.co/hc/reclub-help/articles/1765846581-how-do-i-report-an-issue-to-reclub).
 No message was sent to Reclub.
 
-## Read-only attendee website implementation and review
+## Previous attendee-only implementation (superseded)
 
 The local organizer interface has a same-browser session-link landing flow. **Generate
 Link** creates a local `Open Play` session, stores a random UUID-to-session mapping in browser

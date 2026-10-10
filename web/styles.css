@@ -1634,3 +1634,10 @@ body.has-session .page-heading h1 {position:absolute;width:1px;height:1px;overfl
   .queue-entry .btn {min-height:44px}
   .up-next-heading {flex-wrap:wrap}
 }
+
+/* Link controls reuse the organizer palette and button styles. */
+body[data-runtime="browser"] .landing-content {width:min(100%,560px);grid-template-columns:minmax(0,1fr)}
+body[data-runtime="browser"] .landing-generate {width:min(100%,307px)}
+.generated-link-row {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;width:100%;text-align:left}
+.generated-link-row input {min-width:0;font-size:13px}
+.generated-link-row a {grid-column:1/-1;text-align:center;justify-self:center;text-decoration:none}

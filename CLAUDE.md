@@ -13,10 +13,11 @@ deployment hosts, project board, and identifier conventions are not this project
 - Repository/deployment checks in `tools/`; CI in `.github/workflows/`; hooks in `.githooks/`.
 - The current organizer server is loopback-only. Never expose its unauthenticated
   mutation routes on Vercel or another public host.
-- A local read-only Reclub event preview is implemented in the roster review flow.
-  It uses observed public endpoints as a compatibility adapter, not a supported API
-  contract. The hosted Reclub adapter and Vercel website connection remain pending.
-  No new stack or storage provider has been selected for a hosted queue engine.
+- The local organizer includes read-only Reclub preview. The hosted organizer uses
+  the original green UI with a browser JavaScript queue, 48-hour isolated sessions,
+  copied snapshot links, and direct public Reclub imports. No hosted database,
+  account, or paid backend is used. Shared live editing is not implemented.
+  See [browser session behavior](docs/browser-sessions.md).
 
 ## Commands
 
@@ -25,6 +26,7 @@ python3 -m picklequeue.server
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q picklequeue tests tools
 node --check web/app.js
+node --check web/browser-engine.js
 node --check tests/browser-smoke.cjs
 python3 tools/check_repository.py --history
 git diff --check
@@ -71,12 +73,12 @@ need a concrete approved scope; do not assume another project's provider choices
   remain pending. Never claim the existing unittest check proves that threshold.
 - Public staging and production GitHub environments require `@22104323` approval and
   disallow deployment bypass. The private GitHub plan does not offer required reviewers
-  for private environments; the private deployment workflow remains blocked at preflight.
+  for private environments; configure the protected deployment settings before deployment.
   Staging deploys only from `staging`; production only from `main`.
 - Vercel automatic Git deployments are disabled in `vercel.json`. Use the gated GitHub
   workflow, immutable commit SHA, environment-scoped token, and a checked READY state.
-- Hosting currently fails preflight deliberately: the reviewed attendee endpoint and
-  website connection are missing. A prepared workflow is not a deployed website.
+- Hosted preflight checks browser runtime wiring and server-route exclusions. A passing
+  preflight is not a live deployment; inspect READY and the actual deployed commit.
 - Reclub participant sign-up status must never be treated as physical check-in.
   No upstream write-back, scraping fallback, private endpoint guessing, or third-party
   personal data in fixtures, logs, screenshots, or committed artifacts.

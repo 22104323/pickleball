@@ -37,6 +37,7 @@ jobs:
         run: |
           python3 -m compileall -q picklequeue tests tools
           node --check web/app.js
+          node --check web/browser-engine.js
           node --check tests/browser-smoke.cjs
           git diff --check HEAD^ HEAD
       - name: Check contribution and promotion policy
