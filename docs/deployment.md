@@ -24,8 +24,9 @@ shared history.
 
 The private ruleset protects `develop`, `staging`, and `main`. The public release ruleset
 protects `main`; temporary release branches are deleted after merge. Public `develop`,
-`staging`, and the earlier public feature branch are being retired after their history is
-preserved in the private workspace and the replacement release is ready.
+`staging`, and the earlier public feature branch have been removed after their history
+was preserved in the private workspace. `release/#3` is the temporary public PR branch
+and will be deleted when its PR merges. The earlier public PR #2 was closed as superseded.
 
 The public `staging` and `production` GitHub environments have owner approval gates for
 their allowed branch. The private GitHub plan does not support required-reviewer
