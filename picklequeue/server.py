@@ -114,6 +114,9 @@ def serve(engine, port=8080):
                         engine.unpair_player(id_session,revision,data.get('id_roster'))
                     else:
                         raise Problem('Unknown pairing action.')
+                elif action == 'add-court':
+                    engine.add_court(id_session, revision)
+                    notice = 'Added a court. Fill open courts to prepare a match.'
                 elif action == 'fill':
                     result = engine.fill_courts(id_session,revision)
                     notice = f"Assigned {len(result['assigned'])} court(s). " + ' '.join(result['messages'])

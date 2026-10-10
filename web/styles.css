@@ -460,6 +460,9 @@ main {
 }
 .is-playing .court-top {background:var(--green);color:white}
 .is-playing .court-top .chip {background:#e7f1dc;color:var(--green)}
+.is-playing .court-top h3 {margin-right:auto}
+.is-playing .court-top {gap:10px}
+.btn-court-cancel {background:transparent;color:white;border-color:rgb(255 255 255 / 30%);font-size:11px;min-height:32px;padding:6px 10px}
 .winner-actions {display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 18px 14px}
 .winner-actions .btn {min-height:44px;font-size:14px}
 .btn-team-one {background:var(--green);color:white}
@@ -1550,8 +1553,8 @@ main {width:100%;max-width:1140px;margin:0;padding:0 24px 25px}
 body.has-session .page-heading {margin:0;height:0}
 body.has-session .page-heading .eyebrow,body.has-session .page-heading p {display:none}
 body.has-session .page-heading h1 {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
-.workspace-actions {display:flex;justify-content:flex-end;margin-bottom:14px}
-.workspace-actions:has([hidden]) {display:none}
+.workspace-actions {display:flex;justify-content:flex-end;gap:8px;margin-bottom:14px}
+.workspace-actions:not(:has(button:not([hidden]))) {display:none}
 .section-count {font-weight:400;color:var(--muted)}
 .upcoming-title {margin-bottom:18px}
 .upcoming-title>.muted {font-size:12px}
@@ -1581,7 +1584,7 @@ body.has-session .page-heading h1 {position:absolute;width:1px;height:1px;overfl
 .queue-entry .btn {font-size:10px;padding:6px 8px}
 .reserved-label {display:inline-block;font-size:10px;color:var(--green);background:#e9efdf;border-radius:4px;padding:2px 5px;margin-top:5px}
 .up-next-area {min-width:0}
-.up-next-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:16px;align-items:start}
+.up-next-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));grid-auto-rows:max-content;gap:16px;align-items:start}
 .up-next-card {max-width:360px}
 .up-next-heading {display:flex;align-items:center;gap:7px;padding:15px}
 .up-next-heading h3 {font-size:19px;font-weight:650}
@@ -1612,7 +1615,7 @@ body.has-session .page-heading h1 {position:absolute;width:1px;height:1px;overfl
 @media(max-width:760px) {
   .main-shell {padding:12px 12px}
   .side-navigation {margin-bottom:10px}
-  .side-navigation nav {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));overflow:visible;gap:3px}
+  .side-navigation nav {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible;gap:3px}
   .side-navigation .nav-link {display:flex;justify-content:center;text-align:center;white-space:normal;overflow-wrap:anywhere;font-size:11px;line-height:1.2;padding:8px 4px;min-height:44px}
   .session-header {padding:12px 16px}
   .header-row {gap:10px}
@@ -1637,7 +1640,142 @@ body.has-session .page-heading h1 {position:absolute;width:1px;height:1px;overfl
 
 /* Link controls reuse the organizer palette and button styles. */
 body[data-runtime="browser"] .landing-content {width:min(100%,560px);grid-template-columns:minmax(0,1fr)}
+/* Desktop lists scroll inside the workspace while session controls stay visible. */
+@media(min-width:1001px) {
+  body.has-session {height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+  body.has-session .session-header {flex-shrink:0}
+  body.has-session .main-shell {flex:1;min-height:0;width:100%;padding:16px 24px;align-items:stretch}
+  body.has-session #workspace {position:relative;display:flex;flex-direction:column;min-height:0;padding-bottom:0}
+  body.has-session .page-heading {flex-shrink:0}
+  body.has-session #view-content {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+  body.has-session .workspace-footer {flex-shrink:0;margin-top:10px}
+  body.has-session[data-view="queue"] #workspace {display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto 0 minmax(0,1fr) auto}
+  body.has-session[data-view="queue"] #error {grid-area:1/1}
+  body.has-session[data-view="queue"] #notice {grid-area:2/1}
+  body.has-session[data-view="queue"] .page-heading {grid-area:3/1}
+  body.has-session[data-view="queue"] .workspace-actions {grid-area:4/1;align-self:start;justify-self:end;margin:0;z-index:1}
+  body.has-session[data-view="queue"] .workspace-footer {grid-area:5/1}
+  body.has-session[data-view="queue"] #view-content {grid-area:4/1;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+  body.has-session[data-view="queue"] #view-content>section {display:flex;flex-direction:column;min-height:0}
+  body.has-session[data-view="queue"] #view-content>section:first-child {flex:0 1 40%;min-height:272px}
+  body.has-session[data-view="queue"] #view-content>section:nth-child(2) {flex:1}
+  body.has-session[data-view="queue"] .section-title {flex-shrink:0;margin-bottom:10px}
+  body.has-session[data-view="queue"] #view-content>section:first-child>.section-title {min-height:42px;padding-right:290px}
+  body.has-session[data-view="queue"] .courts {min-height:0;overflow:auto;overscroll-behavior:contain;margin-bottom:0;align-content:start;gap:12px}
+  body.has-session[data-view="queue"] .court-top {padding:12px 16px}
+  body.has-session[data-view="queue"] .court-preview {margin:8px auto 12px;min-height:40px}
+  body.has-session[data-view="queue"] .rotation-layout {flex:1;min-height:0;align-items:stretch}
+  body.has-session[data-view="queue"] .queue-panel {display:flex;flex-direction:column;min-height:0}
+  body.has-session[data-view="queue"] .queue-heading,body.has-session[data-view="queue"] .queue-search {flex-shrink:0}
+  body.has-session[data-view="queue"] .queue-list {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+  body.has-session[data-view="queue"] .queue-entry {padding:12px 14px}
+  body.has-session[data-view="queue"] .empty-state {display:grid;align-content:center;justify-items:center;flex:1;min-height:0;padding:16px}
+  body.has-session[data-view="queue"] .empty-state p {margin-bottom:12px}
+  body.has-session[data-view="queue"] .up-next-area {display:flex;flex-direction:column;min-height:0}
+  body.has-session[data-view="queue"] .up-next-grid {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;align-content:start}
+  body.has-session[data-view="queue"] .up-next-grid:has(>.empty-state) {align-content:stretch}
+  body.has-session[data-view="queue"] .up-next-heading {padding:10px 12px}
+  body.has-session[data-view="queue"] .up-next-heading h3 {font-size:16px}
+  body.has-session[data-view="queue"] .up-next-card .court-teams .team {min-height:88px;padding:8px 12px;gap:4px}
+  body.has-session[data-view="queue"] .up-next-card .court-player strong {font-size:13px;line-height:1.25}
+  body.has-session[data-view="queue"] .up-next-card .court-player small {font-size:10px;margin-top:2px}
+  body.has-session[data-view="queue"] .rotation-note {flex-shrink:0;font-size:11px;line-height:1.5;margin-top:8px;padding:8px 12px}
+  body.has-session[data-view="queue"] .helper-strip {flex-shrink:0;margin-top:0;padding:10px 14px}
+  body.has-session[data-view="queue"] .session-tools {flex-shrink:0;margin-top:0}
+  body[data-runtime="browser"].has-session[data-view="queue"] #view-content>section:first-child>.section-title {padding-right:132px}
+  body.has-session[data-view="queue"] .is-playing .court-teams .team {min-height:100px;padding:10px 14px;gap:10px}
+  body.has-session[data-view="queue"] .is-playing .court-player strong {font-size:14px;line-height:1.25}
+  body.has-session[data-view="queue"] .is-playing .court-player small {font-size:10px;margin-top:2px}
+  body.has-session[data-view="queue"] .is-playing .winner-actions {padding:8px 10px}
+}
+.session-tools {display:flex;gap:8px;flex-wrap:wrap}
+.up-next-timing {font-size:10px;color:var(--green);margin-left:auto}
+.preview-team-label {font-size:10px;font-weight:600;color:var(--muted)}
+.up-next-waiting {padding:14px;border:1px dashed var(--line);border-radius:10px;background:var(--surface)}
+.up-next-waiting h3 {font-size:13px;margin-bottom:8px}
+.up-next-waiting p {font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.setup-page {display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr);grid-template-rows:auto minmax(0,1fr) auto;gap:16px;height:100%;min-height:0}
+.setup-progress {grid-column:1/-1;padding:16px 20px}
+.setup-progress h2 {font-size:11px;color:var(--green);letter-spacing:.4px}
+.setup-progress ol {list-style:none;padding:0;margin:12px 0 0;display:grid;grid-template-columns:repeat(3,1fr)}
+.setup-progress li {display:flex;align-items:center;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--muted)}
+.setup-progress li>span {display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#f0f2ed}
+.setup-progress li.complete>span {background:#e9efdf;color:var(--green)}
+.setup-progress li.current>span {background:var(--green);color:white}
+.setup-progress li small {font-weight:400;color:var(--green)}
+.setup-config {min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:14px}
+.setup-card {padding:16px;flex-shrink:0}
+.setup-card h2,.setup-roster h2 {font-size:15px}
+.setup-setting {display:flex;align-items:center;justify-content:space-between;gap:16px}
+.setup-setting+.setup-setting {margin-top:12px}
+.setup-setting label {margin:0;flex-shrink:0}
+.setup-setting>input {max-width:240px}
+.court-stepper {display:flex;gap:8px;align-items:center}
+.court-stepper input {width:64px;text-align:center;font-size:21px;font-weight:650;padding:5px;appearance:textfield}
+.court-stepper input::-webkit-inner-spin-button {appearance:none}
+.court-stepper .btn {min-width:40px;padding:8px;font-size:18px}
+.setup-options summary {cursor:pointer;font-size:13px;font-weight:600;color:var(--green)}
+.setup-options p {font-size:11px;color:var(--muted);margin-top:12px}
+.setup-card .mode-picker {margin:12px 0 0;padding:0;border:0}
+.setup-card .mode-option {margin:8px 0;padding:12px}
+.setup-roster {min-height:0;display:flex;flex-direction:column}
+.setup-roster-heading,.setup-group-heading {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px}
+.setup-roster-heading {flex-shrink:0}
+.setup-roster .queue-search {flex-shrink:0}
+.setup-roster-list {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding-bottom:14px}
+.setup-group-heading h3 {font-size:13px}
+.setup-players {list-style:none;padding:0 14px;margin:0;display:grid;gap:10px}
+.setup-player {border:1px solid var(--line);border-radius:10px;padding:12px;background:#f8faf5}
+.setup-player-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.setup-player-heading strong {font-size:15px;overflow-wrap:anywhere}
+.setup-player-heading .chip {flex-shrink:0}
+.setup-skill {display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px;margin:10px 0}
+.setup-skill select {min-height:36px;font-size:11px;padding:7px 32px 7px 10px;max-width:240px}
+.setup-confirm {display:flex;align-items:center;gap:8px;font-size:11px;font-weight:400;margin:10px 0;color:var(--muted)}
+.setup-confirm input {width:16px;height:16px;min-height:0;flex-shrink:0;accent-color:var(--green)}
+.setup-bulk-confirm {padding:0 16px}
+.setup-player-actions {display:flex;gap:10px;align-items:center}
+.setup-player-actions .btn-primary {flex:1}
+.setup-start {grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.setup-start span {font-size:13px;color:var(--green);font-weight:600}
+.setup-start .btn {min-width:200px}
+body.has-session[data-view="setup"] .side-navigation {display:none}
+body.has-session[data-view="setup"] .main-shell {grid-template-columns:minmax(0,1fr);max-width:1200px}
+body.has-session[data-view="setup"] #view-content {overflow:hidden}
+@media(max-width:1000px) {
+  .setup-page {height:auto;grid-template-rows:auto auto auto}
+  .setup-config,.setup-roster-list {overflow:visible}
+  .setup-roster {min-height:300px}
+  .setup-start {position:sticky;bottom:12px;box-shadow:var(--shadow);z-index:2}
+}
+@media(max-width:760px) {
+  .setup-page {display:flex;flex-direction:column;gap:14px}
+  .setup-config {overflow:visible}
+  .setup-setting {gap:10px}
+  .setup-setting>input {max-width:180px}
+  .setup-page {padding-bottom:110px}
+  .setup-start {position:fixed;left:16px;right:16px;flex-direction:column;gap:8px;bottom:8px}
+  .setup-start .btn {width:100%}
+}
 body[data-runtime="browser"] .landing-generate {width:min(100%,307px)}
 .generated-link-row {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;width:100%;text-align:left}
 .generated-link-row input {min-width:0;font-size:13px}
 .generated-link-row a {grid-column:1/-1;text-align:center;justify-self:center;text-decoration:none}
+
+.results-layout {display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
+.results-layout>.panel {min-width:0;margin:0}
+.results-layout th,.results-layout td {padding:12px}
+.results-layout .panel-toolbar p {font-size:12px;color:var(--muted);margin-top:5px}
+@media(min-width:1001px) {
+  body.has-session[data-view="results"] #view-content {overflow:hidden}
+  .results-layout {height:100%;min-height:0;align-items:stretch}
+  .results-layout>.panel {display:flex;flex-direction:column;min-height:0}
+  .results-layout .panel-toolbar,.results-layout .rating-note {flex-shrink:0}
+  .results-layout .table-wrap {flex:1;min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain}
+  .results-layout th {position:sticky;top:0;z-index:1}
+  .results-layout .empty-state {flex:1;min-height:0}
+}
+@media(max-width:1000px) {
+  .results-layout {grid-template-columns:minmax(0,1fr)}
+  .results-layout .table-wrap {max-height:420px;overflow:auto}
+}

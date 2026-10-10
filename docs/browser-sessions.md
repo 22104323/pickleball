@@ -61,5 +61,16 @@ and exclusions; it does not prove matching correctness or a successful deploymen
 
 Use the repository's protected PR and GitHub environment workflow. Required settings
 remain `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, optional `VERCEL_TEAM_ID`, and
-`VERCEL_WEBSITE_READY=true`. The already deployed attendee page remains live until
-an actual deployment of the corrected commit reports READY and is inspected.
+`VERCEL_WEBSITE_READY=true`. The public browser organizer was deployed on 2026-10-10 at commit
+`05e5a14d3440c5b7b23eea17223c873f0e982445`. Each subsequent release must
+report READY and pass a live inspection before being reported as deployed.
+
+## Organizer setup and automatic rotation — 2026-10-10
+
+Generated links and New session open a setup form with session name, courts, matching mode, player import, and individual or bulk check-in. Names stay visible in Not Yet Here until arrival. The separate Attendance navigation and header session selector are removed. Browser check-in needs no membership/waiver checkbox. Start session automatically builds and starts valid games; recording results, checking in more players, or adding a court fills available courts automatically. Up Next previews a possible next match and does not reserve players or need another Send to Court action. Matching constraints may leave a court waiting despite four players being present. Initial session settings and skills lock after the first game is prepared; courts can still be added, up to eight. Desktop lists scroll inside their panels while the page fits the viewport. Mobile keeps a vertical layout. The owner approved merging and deploying these reviewed changes on 2026-10-10.
+
+Updated local cancellation behavior: cancelled players return to the back of the queue. The announced next valid match immediately fills the available court, with its planned teams retained when they still satisfy the mode rules. The cancelled quartet is excluded from that immediate refill so a cancelled game does not simply restart when no replacement is ready. A cancellation reason is optional. Success notification banners are removed; errors still appear. The owner reviewed the local preview and approved protected promotion to the live site.
+
+Up Next now plans all valid groups of waiting players across the current matching mode, rather than one match. Numbered cards show teammates, opponents, and matches ahead; queue rows show the same turn. Players without a full compatible group appear in a waiting section. The schedule also appears in Live View without organizer controls. These are ordered previews, not minute estimates or guarantees about future results. Results, cancellations, and player changes refresh the schedule. Cards scroll inside the panel; their grid rows keep the full card height.
+
+Game results and Live Standings appear side by side on desktop, with independent table scrolling and fixed headings. Narrow screens stack the panels.
