@@ -464,3 +464,150 @@ Chromium inspection with synthetic demo players at 1440×900 showed aligned resu
 The owner requested the guided walkthrough shown in the reference screenshots. The header now opens a four-step browser setup tour covering session details, matching mode, players/check-in, and starting play. Highlighted sections remain interactive; the surrounding page is dimmed. Next, Back, Skip, and Escape are supported; closing returns focus to Guide me. The tour follows internal scrolling and viewport resizing and closes when navigating out of setup. The local Python page opens its existing session-dialog guide from the same header button. Landing-page generated-link copying remains available. No engine, storage, or hosting boundary changed.
 
 JavaScript syntax, hosted preflight, and whitespace checks passed. Chromium inspection at 1440×900 stepped through all four cards, Back, and Escape, with focus restored and no page errors. A 390×844 preview kept the card within the viewport without horizontal page overflow. No new automated test suite was added or run locally. Both application copies match; protected PR checks and READY deployment remain required for this release.
+
+## 2026-10-17 — Preserve queue priority across temporary breaks
+
+- Sprint: unassigned. No matching issue was found; local issue draft: “Preserve queue
+  priority during a temporary break.” No issue was published.
+- A player marked **Take a break** lost their queue ticket and was assigned a new one
+  on **Rejoin**, so a player leaving while Up Next could lose that turn.
+- Temporary pauses now keep the ticket while removing the player from match selection.
+  The roster labels this state **On break · place held**. Rejoining restores that place
+  and resets the wait timer. Check-out or lost eligibility still clears the ticket.
+  Up Next is recalculated, not restored as a fixed match.
+- Applied the same state transition to the browser and SQLite queue engines. Existing
+  players paused by older versions have no saved ticket and will rejoin at the back.
+- Verification: syntax checks and whitespace check passed. Unit and browser behavior
+  tests were not run.
+
+## 2026-10-17 — Review and complete the browser break flow
+
+- Correction to the earlier diagnosis: returning at the back matched the old README
+  policy. Holding priority is the newly requested behavior. The first patch's label
+  was in the local roster view; the active browser setup still had no return control.
+- Added **On break** players and **Return to queue** in Live queue. Players & check-in
+  now labels resting players and offers both Take a break and Return to queue.
+  Closed sessions do not label their finished roster as resting.
+- Saving already-valid eligibility no longer silently ends a break, including legacy
+  records whose old tickets were erased. Restoring genuinely lost eligibility still
+  gets a new ticket. Active game restrictions and match validity rules remain in force.
+- Verification: 83 Python tests passed, including four added break regressions. The
+  Chromium regression passed the real queue/setup buttons, paused exclusion while
+  other games advance, held priority and wait-clock restart, reload, snapshot sharing,
+  checkout, lost eligibility, legacy ticket loss, automatic matching on return,
+  active-game guards, and closed sessions. Desktop 1440×900 and mobile 390×844
+  screenshots were inspected; the return control is visible and there is no horizontal
+  overflow. These checks used temporary databases and synthetic browser storage.
+- Browser hosting preflight and JavaScript syntax checks passed. Source changes remain
+  in `/tmp/pickleball-break-fix`; no commit, push, merge, or deployment was performed.
+
+## 2026-10-17 — Combine queue and break rows; edit player names
+
+- Replaced the separate break section with one queue list. Resting players show an
+  On break badge beside their name, held-place information, and Return to queue.
+  Queue positions count active participants only.
+- Added accessible pencil controls and a name editor to Live queue and Players &
+  check-in, with rename support in both engines. Renaming preserves roster identity,
+  break state, tickets, and results; a display edit does not automatically fill courts.
+  SQLite names belong to members and therefore update that member's session history.
+- Verification: 84 Python tests passed. Chromium passed the unified-list and pencil
+  flow, escaping, paused priority, on-court name display, invalid-name rollback,
+  and a free-court regression proving renaming does not start a match, alongside the
+  existing break/return checks. Mobile and desktop screenshots were inspected.
+  JavaScript syntax, whitespace, browser hosting preflight, and repository safety
+  checks passed. Temporary databases and synthetic browser storage only.
+- Local preview remains at http://127.0.0.1:8083. No commit, push, merge, or deployment.
+
+## 2026-10-17 — Game options and player substitutions
+
+- Added Game options beside On court, containing Cancel game and Substitute player.
+  The picker suggests the earliest eligible queued replacement, includes Up Next
+  players, warns about skipping priority, and previews break or check-out. Manual
+  lineup changes explicitly override matching preferences and preserve court/team side.
+- Started-game departures receive fresh tickets before going on break; checkout
+  clears priority. Up Next is recalculated. The local organizer can release an
+  unstarted reserved plan and attempt to reassign its court without changing other
+  players' tickets. Other active court participants cannot be selected.
+- Added durable substitution history in both engines. Started substituted games
+  record team results and count each participant once on completion, including
+  repeated departures/returns, but do not award individual W/L, rating observations,
+  or inferred match history. Pre-start replacements retain ordinary result treatment.
+  Rebuilding manually changed unstarted lineups is rejected to preserve the trail.
+- SQLite initialization adds game_substitutions and advances v2 to v3; temporary-db
+  migration tests preserved existing data. Legacy browser v1 records remain readable;
+  first substitution promotes to v2 so older engines reject that format. Copied
+  snapshots validate chronology, team-slot chains, participation and assignments.
+- User visual correction: putting participation-only notes on court cards made them
+  taller and clipped the win controls. Moved those details into Game options and
+  Game results. Browser assertions confirm equal card heights and win buttons inside
+  the cards at 1275×741. Desktop and mobile screenshots were inspected.
+- Verification: 90 Python tests passed; the browser substitution regression passed
+  the 17-player flow, Up Next selection, break/checkout, repeated substitutions,
+  reload/share, tampered-snapshot rejection, partial-game rating exclusion, stale
+  submission, unavailable-player rejection, and cancel access. Existing browser break
+  regression and a separate local SQLite organizer UI check passed. JavaScript syntax,
+  Python compilation, hosting preflight, repository safety and whitespace checks passed.
+  All runtime checks used synthetic browser sessions and temporary SQLite databases.
+- No matching substitution issue was found in either repository; unpublished issue
+  draft is /tmp/pickleball-substitution-review.md. Work remains in the isolated
+  /tmp/pickleball-break-fix worktree, with no commit, publication or deployment.
+
+
+## 2026-10-17 — Keep substitutes checked in
+
+- Follow-up to the substitution picker: removed the departing-player disposition
+  control. Game options now contains exactly the two requested player selectors;
+  substitutions always keep the departing player present and put them on break.
+  The substitution action rejects check-out. The separate Players & check-in
+  check-out action remains available outside a substitution.
+- Verification: all 90 Python tests passed. The updated hosted browser regression
+  checks the two-field picker, rejects checkout through substitution, and confirms
+  repeated outgoing players remain present with their held break ticket. The previous
+  SQLite browser smoke script needs a fresh isolated database for repeat runs; no app
+  data was changed by that failed rerun. No deployment or publication.
+
+
+## 2026-10-17 — Improve the phone controls
+
+- User feedback noted the phone view of Game options. On narrow screens its Cancel
+  game and Substitute player buttons now stack full-width with 48 px targets. The
+  substitute selectors and dialog actions also fill the dialog width with readable
+  text and touch-friendly heights.
+- Kept the existing two-selector substitution behavior and short court cards.
+  Verification checks dialog/card bounds, no horizontal page overflow, and mobile
+  action-button sizes on a 390×844 Chromium viewport.
+
+## 2026-10-17 — Confirm the final phone flow and local organizer
+
+- Correction: the first repeat of the local SQLite browser smoke reused a temporary
+  database and found no fresh Up Next game; it did not show a substitution defect.
+  A rerun against a new temporary database passed the actual local organizer UI and
+  SQLite result path after substitutions were changed to break-only.
+- Hosted Chromium also passed the final narrow-screen Game options and substitute
+  dialogs: 390×844, no horizontal page overflow, full-width game actions with 48 px
+  touch targets, two player selectors, and no check-out choice.
+
+
+## 2026-10-17 — Change matching mode during play
+
+- Added **Change Mode** beside Up Next. Its picker lists the supported matching
+  modes and explains that the queue is affected, tickets stay put, future plans
+  are recalculated, and games already on court continue unchanged. The active
+  mode stays visible beside Up Next.
+- Browser sessions now release any stale unstarted assignment back to its original
+  queue place before recalculating previews. The SQLite organizer cancels stale
+  planned games, returns their players without changing tickets or wait timestamps,
+  and fills open courts under the new mode. If the mode has no compatible match,
+  the players remain queued. Both paths record the mode change in activity history.
+- Three-or-more-court desktop sessions now scroll the full queue view, keeping all
+  court cards at natural height instead of clipping a second row inside a short panel.
+  The mode picker uses a two-column, touch-friendly layout on phones with both
+  actions visible.
+- Narrow phone navigation now uses a two-column grid. Labels stay on one line and
+  the live queue count remains aligned beside its label instead of wrapping beneath it.
+- Verification: all 93 Python tests passed. Chromium passed the 4-court desktop
+  layout, mode change with a four-court active session, preserved queue tickets,
+  unchanged live games, recalculated previews, and 390×844 picker bounds. The narrow
+  navigation label and count were also checked at 320×740. Break and substitution
+  browser regressions passed. Synthetic sessions only; no hosted data was changed,
+  and nothing was deployed or published.

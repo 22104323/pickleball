@@ -28,6 +28,21 @@ through `python3 -m picklequeue.server` and `web/organizer.html`.
    another link for a fresh session. Expired local records are removed when accessed
    or when the landing page/new-session flow performs cleanup.
 
+Taking a break temporarily removes a waiting player from match selection but preserves
+their queue ticket. Rejoining restores that priority and starts a fresh wait timer.
+Up Next is recalculated when the player leaves or returns, so the same teammates are
+not guaranteed. Checking out or losing eligibility clears the ticket; a later return
+then joins at the back.
+
+Use **Take a break** in Live queue or Players & check-in. The player appears in the
+same Live queue list with **On break** beside their name, and is labelled
+**On break · place held** in Players &
+check-in. Both screens offer **Return to queue**. Their priority stays held for the
+whole break, with no time limit within the session. Saving unchanged eligibility does
+not end a break. Returning can automatically start a valid match if a court is free;
+otherwise the player waits at their retained priority. Active games must be resolved
+before a player can take a break. Closed sessions have no active break or queue.
+
 ## Storage and limits
 
 Session data stays in browser `localStorage`, scoped by the random session token.
@@ -77,3 +92,32 @@ Updated local cancellation behavior: cancelled players return to the back of the
 Up Next now plans all valid groups of waiting players across the current matching mode, rather than one match. Numbered cards show teammates, opponents, and matches ahead; queue rows show the same turn. Players without a full compatible group appear in a waiting section. The schedule also appears in Live View without organizer controls. These are ordered previews, not minute estimates or guarantees about future results. Results, cancellations, and player changes refresh the schedule. Cards scroll inside the panel; their grid rows keep the full card height.
 
 Game results and Live Standings appear side by side on desktop, with independent table scrolling and fixed headings. Narrow screens stack the panels.
+
+Use the pencil beside a player name in Live queue or Players & check-in to edit it.
+Saving changes the display name without changing identity, queue state, priority,
+or results, and does not start a match. Name edits are available during an active
+session, including for players on court. In the SQLite organizer, the name belongs
+to the member and updates wherever that member appears.
+
+## Game options and substitutions
+
+**Game options**, beside **On court**, contains **Cancel game** and **Substitute
+player**. The substitute picker shows eligible queued players, their order, and
+Up Next membership. It suggests the earliest available player, warns about skipped
+players, and previews the outgoing player going on break while staying checked in. The
+form contains only those two player selectors. The outgoing player remains
+checked in, goes on break, and receives a fresh held ticket. Confirming replaces
+that court/team slot and recalculates Up Next; it does not swap players' tickets.
+They can return from the combined queue at that place. This explicit manual lineup
+change can override matching preferences.
+
+Started substituted games preserve their team result and count each participant
+once on completion, but award no individual W/L, ratings, or inferred matching
+history. The substitution trail remains in Game options and Game results; it is
+kept off the court cards. Cancelled games count no participation. Stale dialog
+submissions fail without changing the lineup; reopen the picker after refreshing.
+
+Legacy v1 records remain supported. Substituting promotes the record to v2 so older
+engines reject the changed format. Copies validate substitution chronology, roster
+references, team-slot history, participation totals, and active assignments. Copied
+links still create independent device-local sessions and do not synchronize.

@@ -117,6 +117,11 @@ def serve(engine, port=8080):
                 elif action == 'add-court':
                     engine.add_court(id_session, revision)
                     notice = 'Added a court. Fill open courts to prepare a match.'
+                elif action == 'configure':
+                    result = engine.configure_mode(id_session, revision, data.get('mode'))
+                    notice = (f"Mode changed to {result['mode'].replace('_', ' ')}. "
+                              f"Rebuilt {len(result['assigned'])} upcoming match(es); queue places are preserved. "
+                              'Games already on court continue unchanged. ' + ' '.join(result['messages']))
                 elif action == 'fill':
                     result = engine.fill_courts(id_session,revision)
                     notice = f"Assigned {len(result['assigned'])} court(s). " + ' '.join(result['messages'])

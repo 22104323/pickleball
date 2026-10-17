@@ -39,7 +39,7 @@
     if (!raw) return null;
     let record;
     try { record = JSON.parse(raw); } catch { fail('This browser session could not be read. Generate a new link.'); }
-    if (record.version !== 1 || record.token !== token || !Number.isFinite(record.expires_at)) fail('This session uses an unsupported format.');
+    if (![1,2].includes(record.version) || record.token !== token || !Number.isFinite(record.expires_at)) fail('This session uses an unsupported format.');
     if (record.expires_at <= now()) {
       localStorage.removeItem(PREFIX + token);
       fail('This session link has expired after 48 hours. Generate a new link.',410);
@@ -107,15 +107,21 @@
     return {matches,waiting:waiting.filter(p=>!planned.has(p.id)).map(p=>p.id)};
   }
 
+  function ratedGame(game) { return !(game.substitutions||[]).some(change=>change.during_play); }
+  function participants(game) {
+    return [...new Set([...game.players.map(p=>p.id_roster),...(game.substitutions||[]).filter(change=>change.during_play).map(change=>change.outgoing_id)])];
+  }
+
   function snapshot(record) {
     const output = structuredClone(record);
     const planned=upcoming(record);
     output.up_next=planned.matches;
-    const wins = new Map(), latest = new Map();
+    const wins = new Map(), losses = new Map(), latest = new Map();
     const completed = output.games.filter(game=>game.status==='completed').sort((a,b)=>b.id-a.id);
-    for (const game of completed) for (const player of game.players) {
+    for (const game of completed.filter(ratedGame)) for (const player of game.players) {
       const won = (game.score_a > game.score_b) === (player.side === 'a');
       wins.set(player.id_roster,(wins.get(player.id_roster)||0)+Number(won));
+      losses.set(player.id_roster,(losses.get(player.id_roster)||0)+Number(!won));
       if (!latest.has(player.id_roster)) latest.set(player.id_roster,won?'winner':'loser');
     }
     output.players.sort((a,b)=>(a.ticket ?? Infinity)-(b.ticket ?? Infinity)||a.id-b.id);
@@ -127,14 +133,18 @@
       player.provisional = player.rated_games < 10;
       player.band = band(player.rating);
       player.wins = wins.get(player.id)||0;
-      player.losses = player.games_played-player.wins;
+      player.losses = losses.get(player.id)||0;
       player.last_outcome = latest.get(player.id)||null;
       const partner = output.players.find(other=>other.id===player.paired_roster_id);
       player.partner_name = partner?.name || null;
     }
     output.games.sort((a,b)=>b.id-a.id);
-    for (const game of output.games) for (const gp of game.players) {
-      gp.name = output.players.find(player=>player.id===gp.id_roster)?.name || 'Player';
+    for (const game of output.games) {
+      game.rating_eligible=ratedGame(game);
+      game.substitutions=(game.substitutions||[]).map(change=>({...change,
+        outgoing_name:output.players.find(p=>p.id===change.outgoing_id)?.name||'Player',
+        incoming_name:output.players.find(p=>p.id===change.incoming_id)?.name||'Player'}));
+      for (const gp of game.players) gp.name=output.players.find(player=>player.id===gp.id_roster)?.name||'Player';
     }
     const standings = output.players.map(({id,name,wins,losses,games_played})=>({id,name,wins,losses,games_played}));
     standings.sort((a,b)=>b.wins-a.wins||Number(a.games_played===0)-Number(b.games_played===0)||a.losses-b.losses||a.name.toLowerCase().localeCompare(b.name.toLowerCase())||a.id-b.id);
@@ -155,6 +165,20 @@
     player.queue_state = 'off';
     player.ticket = null;
     player.queued_at = null;
+  }
+
+  function rejoin(record,player) {
+    if (player.ticket===null) enqueue(record,player);
+    else {
+      player.queue_state='waiting';
+      player.queued_at=now();
+    }
+  }
+
+  function pause(player) {
+    if (player.queue_state!=='waiting') fail('Player is not waiting in the queue.',409);
+    player.queue_state='off';
+    player.queued_at=null;
   }
 
   function getPlayer(record,id) {
@@ -181,14 +205,16 @@
   function playerAction(record,data) {
     const player = getPlayer(record,data.id_roster);
     if (data.action==='checkin') checkin(record,player);
+    else if (data.action==='rename') player.name=text(data.name,'Player name',80);
     else {
       available(player);
       if (data.action==='eligibility') {
         if (!['active','expired','unknown'].includes(data.membership)||!['valid','missing','unknown'].includes(data.waiver)) fail('Choose valid membership and waiver states.');
+        const wasEligible=eligible(player);
         player.membership = data.membership;
         player.waiver = data.waiver;
         if (!eligible(player)) off(player);
-        else if (player.attendance==='present'&&player.queue_state==='off') enqueue(record,player);
+        else if (player.attendance==='present'&&player.queue_state==='off'&&!wasEligible) enqueue(record,player);
       } else if (data.action==='rating') {
         if (record.games.length) fail('Set initial skills before preparing the first game.',409);
         const rating=Number(data.rating);
@@ -201,13 +227,15 @@
       } else if (data.action==='resume') {
         if (player.attendance!=='present'||!eligible(player)) fail('Player must be present and eligible.');
         if (player.queue_state==='waiting') fail('Player is already queued.',409);
-        enqueue(record,player);
+        rejoin(record,player);
       } else if (['pause','checkout'].includes(data.action)) {
         if (data.action==='checkout') {
           if (player.attendance!=='present') fail('Player is not checked in.',409);
           player.attendance='left'; player.checked_out_at=now();
+          off(player);
+        } else {
+          pause(player);
         }
-        off(player);
       } else fail('Unknown player action.');
     }
     audit(record,`player.${data.action}`,{id_roster:player.id});
@@ -271,7 +299,7 @@
 
   function history(record) {
     const partners=new Map(),opponents=new Map();
-    for (const game of record.games.filter(g=>g.status==='completed').slice(-10)) {
+    for (const game of record.games.filter(g=>g.status==='completed'&&ratedGame(g)).slice(-10)) {
       for (let i=0;i<game.players.length;i++) for (let j=i+1;j<game.players.length;j++) {
         const a=game.players[i],b=game.players[j],counts=a.side===b.side?partners:opponents;
         const key=pairKey(a.id_roster,b.id_roster);
@@ -332,7 +360,7 @@
     const active=record.games.filter(g=>ACTIVE.includes(g.status));
     if (!rebuild&&mode==='social_mix'&&active.some(g=>g.status==='assigned')) return 'Social Mix: start the planned match before building the next mix.';
     const outcomes=new Map(),lastCourts=new Map();
-    for (const game of record.games.filter(g=>g.status==='completed').sort((a,b)=>b.id-a.id)) for (const gp of game.players) {
+    for (const game of record.games.filter(g=>g.status==='completed'&&ratedGame(g)).sort((a,b)=>b.id-a.id)) for (const gp of game.players) {
       if (!outcomes.has(gp.id_roster)) {
         outcomes.set(gp.id_roster,(game.score_a>game.score_b)===(gp.side==='a')?'winner':'loser');
         lastCourts.set(gp.id_roster,game.court);
@@ -426,7 +454,34 @@
       } else { scoreA=integer(data.score_a,'Team A score',0,99); scoreB=integer(data.score_b,'Team B score',0,99); }
       if (scoreA===scoreB) fail('A completed game needs a winner.');
       Object.assign(game,{status:'completed',score_a:scoreA,score_b:scoreB,completed_at:now()});
-      for (const p of players) { p.games_played++; if (p.attendance==='present'&&eligible(p)) enqueue(record,p); else off(p); }
+      for (const id of participants(game)) getPlayer(record,id).games_played++;
+      for (const p of players) { if (p.attendance==='present'&&eligible(p)) enqueue(record,p); else off(p); }
+    } else if (action==='substitute') {
+      if (!ACTIVE.includes(game.status)) fail('Only an active game can have a substitute.',409);
+      const outgoing=getPlayer(record,data.outgoing_id),incoming=getPlayer(record,data.incoming_id);
+      const slot=game.players.find(gp=>gp.id_roster===outgoing.id);
+      if (!slot||outgoing.id===incoming.id) fail('Choose a current player and a different replacement.');
+      if (incoming.attendance!=='present'||!eligible(incoming)||!['waiting','assigned'].includes(incoming.queue_state)) fail('The replacement must be present, eligible, and in the queue.',409);
+      if (data.disposition!=='break') fail('A substitute always sends the departing player on a break.')
+      if ((game.substitutions||[]).length>=200) fail('This game has reached its substitution limit.',409);
+      const reserved=record.games.find(g=>g.status==='assigned'&&g.id!==game.id&&g.players.some(p=>p.id_roster===incoming.id));
+      if (incoming.queue_state==='assigned'&&!reserved) fail('The replacement is no longer available.',409);
+      if (reserved) {
+        reserved.status='cancelled';reserved.completed_at=now();
+        reserved.players.forEach(gp=>getPlayer(record,gp.id_roster).queue_state='waiting');
+        audit(record,'game.preview_released',{id_game:reserved.id,for_substitution:game.id});
+      }
+      const during_play=game.status==='playing';
+      (game.substitutions??=[]).push({outgoing_id:outgoing.id,incoming_id:incoming.id,side:slot.side,during_play,at:now(),disposition:data.disposition});
+      Object.assign(slot,{id_roster:incoming.id,name:incoming.name,gender:incoming.gender,rating:incoming.rating,deviation:incoming.deviation,volatility:incoming.volatility});
+      const means=['a','b'].map(side=>game.players.filter(p=>p.side===side).reduce((sum,p)=>sum+p.rating,0)/2);
+      Object.assign(game,{mean_a:means[0],mean_b:means[1],expected_a:record.session.mode==='social_mix'?.5:1/(1+10**((means[1]-means[0])/400)),cost:0,reason:'Manual lineup change by organizer.'});
+      incoming.queue_state=game.status;
+      if(during_play) enqueue(record,outgoing);
+      outgoing.queue_state='off';outgoing.queued_at=null;
+      record.version=2;
+      audit(record,'game.substituted',{id_game:game.id,outgoing_id:outgoing.id,incoming_id:incoming.id,disposition:data.disposition});
+      return during_play?'Player substituted. This game counts participation only; no individual wins, losses, or rating changes.':'Player replaced before play. The game remains rated.';
     } else if (action==='swap_winner') {
       if (game.status!=='completed') fail('Only completed games have a winner to correct.',409);
       [game.score_a,game.score_b]=[game.score_b,game.score_a];
@@ -434,6 +489,7 @@
       return 'Winner corrected. Games played and Up Next teams are unchanged.';
     } else if (action==='rebuild') {
       if (game.status!=='assigned') fail('Only an unstarted Up Next game can be rebuilt.',409);
+      if (game.substitutions?.length) fail('Cancel a manually changed lineup to plan a new match; its substitution history must be kept.',409);
       const old=teamsKey(['a','b'].map(side=>game.players.filter(p=>p.side===side).map(p=>({id:p.id_roster}))));
       players.forEach(p=>p.queue_state='waiting');
       fill(record,[game.court],game,old);
@@ -495,7 +551,7 @@
     const bases=new Map(record.players.map(p=>[p.id,{value:p.base_rating,deviation:p.base_deviation,volatility:p.base_volatility}]));
     for (const player of record.players) {
       const results=[];
-      for (const game of record.games.filter(g=>g.status==='completed')) {
+      for (const game of record.games.filter(g=>g.status==='completed'&&ratedGame(g))) {
         const gp=game.players.find(p=>p.id_roster===player.id);
         if (!gp) continue;
         const partner=bases.get(game.players.find(p=>p.side===gp.side&&p.id_roster!==player.id).id_roster);
@@ -528,15 +584,25 @@
       record.session.court_count+=1;
       audit(record,'court.added',{court:record.session.court_count});
     } else if (action==='configure') {
-      if (record.games.length) fail('Session settings are locked after preparing the first game.',409);
+      const modeOnly=data.mode!==undefined&&Object.keys(data).every(key=>key==='revision'||key==='mode');
+      if (record.games.length&&!modeOnly) fail('Session details are locked after preparing the first game. You can still change the matching mode.',409);
       const name=text(data.name??record.session.name,'Session name');
       const court_count=integer(data.court_count??record.session.court_count,'Courts',1,8);
       const max_players=integer(data.max_players??record.session.max_players,'Capacity',4,200);
       const mode=data.mode??record.session.mode;
       if (!MODES.includes(mode)) fail('Choose a supported play mode.');
       if (max_players<record.players.filter(p=>p.attendance==='present').length) fail('Capacity cannot be less than the checked-in player count.',409);
+      const previousMode=record.session.mode;
+      const released= mode!==previousMode ? record.games.filter(game=>game.status==='assigned') : [];
+      for(const game of released) {
+        game.status='cancelled';game.completed_at=now();
+        for(const player of game.players) getPlayer(record,player.id_roster).queue_state='waiting';
+      }
       Object.assign(record.session,{name,court_count,max_players,mode});
-      audit(record,'session.configured',{court_count,max_players,mode});
+      if(mode!==previousMode) {
+        audit(record,'session.mode_changed',{previous_mode:previousMode,mode,released_games:released.map(game=>game.id)});
+        notice=`Mode changed to ${mode.replaceAll('_',' ')}. Up Next is recalculated; games already on court continue unchanged.`;
+      } else audit(record,'session.configured',{court_count,max_players,mode});
     } else if (action==='checkin-confirmed') {
       if (!Array.isArray(data.id_rosters)||!data.id_rosters.length||data.id_rosters.length>200||new Set(data.id_rosters).size!==data.id_rosters.length) fail('Choose distinct players to check in.');
       const players=data.id_rosters.map(id=>getPlayer(record,id));
@@ -545,7 +611,7 @@
       for (const player of players) {
         player.membership='active';player.waiver='valid';
         if (player.attendance!=='present') checkin(record,player);
-        else if (player.queue_state==='off') enqueue(record,player);
+        else if (player.queue_state==='off') rejoin(record,player);
       }
       audit(record,'players.checked_in_confirmed',{players:players.length});
       notice=`Checked in ${players.length} players. They are ready for the queue.`;
@@ -574,7 +640,7 @@
     else if (action==='reconcile') { const count=reconcile(record); audit(record,'attendance.reconciled',{no_shows:count}); notice=`Marked ${count} absent RSVPs as no-shows. No penalties applied.`; }
     else if (action==='close') notice=close(record);
     else fail('Action not found.',404);
-    if(action!=='start-session'&&record.games.length&&record.session.status==='active') advanceCourts(record,planned,excluded);
+    if(action!=='start-session'&&!(action==='configure'&&data.mode!==undefined)&&!(action==='player'&&data.action==='rename')&&!(action==='game'&&data.action==='substitute')&&record.games.length&&record.session.status==='active') advanceCourts(record,planned,excluded);
     record.session.revision++;
     return notice;
   }
@@ -637,7 +703,7 @@
   }
 
   function validateSnapshot(value,token) {
-    if (!value||value.version!==1||value.token!==token||!value.session||!Array.isArray(value.players)||!Array.isArray(value.games)||!Array.isArray(value.audit)) fail('This session link contains an unsupported snapshot.');
+    if (!value||![1,2].includes(value.version)||value.token!==token||!value.session||!Array.isArray(value.players)||!Array.isArray(value.games)||!Array.isArray(value.audit)) fail('This session link contains an unsupported snapshot.');
     const s=value.session;
     integer(s.id,'Session ID',1,Number.MAX_SAFE_INTEGER);
     text(s.name,'Session name'); integer(s.court_count,'Courts',1,8); integer(s.max_players,'Capacity',4,200);
@@ -687,6 +753,17 @@
         if (courts.has(g.court)) fail('This link assigns a court twice.');
         courts.add(g.court);
       }
+      const changes=g.substitutions??[];
+      if (!Array.isArray(changes)||changes.length>200||(changes.length&&value.version!==2)) fail('This link contains invalid substitutions.');
+      const lineup=g.players.map(p=>({id:p.id_roster,side:p.side}));
+      let previous=g.completed_at??now()+60;
+      for (const change of [...changes].reverse()) {
+        if (!change||!ids.has(change.outgoing_id)||!ids.has(change.incoming_id)||change.outgoing_id===change.incoming_id||!['a','b'].includes(change.side)||typeof change.during_play!=='boolean'||!['break','checkout'].includes(change.disposition)||!Number.isFinite(change.at)||change.at<g.assigned_at||change.at>previous||change.at>now()+60) fail('This link contains an invalid substitution.');
+        if (change.during_play&&(g.status==='assigned'||g.started_at===null||change.at<g.started_at)||!change.during_play&&g.started_at!==null&&change.at>g.started_at) fail('This link contains an invalid substitution time.');
+        const slot=lineup.find(p=>p.id===change.incoming_id&&p.side===change.side);
+        if (!slot||lineup.some(p=>p.id===change.outgoing_id)) fail('This link contains an inconsistent substitution history.');
+        slot.id=change.outgoing_id;previous=change.at;
+      }
       for (const gp of g.players) {
         if (!ids.has(gp.id_roster)) fail('This link assigns a player outside its roster.');
         for (const key of ['rating','deviation','volatility']) if (!Number.isFinite(gp[key])||(key!=='rating'&&gp[key]<=0)) fail('This link contains an invalid frozen rating.');
@@ -694,8 +771,8 @@
           if (activePlayers.has(gp.id_roster)) fail('This link assigns a player twice.');
           activePlayers.set(gp.id_roster,g.status);
         }
-        if (g.status==='completed') played.set(gp.id_roster,(played.get(gp.id_roster)||0)+1);
       }
+      if (g.status==='completed') for (const id of participants(g)) played.set(id,(played.get(id)||0)+1);
     }
     for (const p of value.players) if (p.games_played!==(played.get(p.id)||0)|| (ACTIVE.includes(p.queue_state) ? activePlayers.get(p.id)!==p.queue_state : activePlayers.has(p.id))) fail('This link contains inconsistent player results or assignments.');
     for (const a of value.audit) {

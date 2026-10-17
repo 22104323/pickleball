@@ -20,7 +20,7 @@ the public Vercel site serves the browser organizer through protected releases.
 | Pasted player lists and direct public Reclub imports in the browser | Supported Reclub developer contract, verified export format, and upstream write-back |
 | Separate RSVP, attendance, eligibility, and queue states | Payments, guests, division policies, and notification integrations |
 | Manual check-in, late-arrival tracking, pause, rejoin, and check-out | Attendance reliability rewards and approved future-session penalties |
-| Transactional mode-aware court assignment, partner preferences, starts, corrections, and Rebuild | Winner-stays, manual match editing, and multi-court swap optimization |
+| Transactional mode-aware court assignment, partner preferences, starts, corrections, and Rebuild | Winner-stays, full manual match editing, and multi-court swap optimization |
 | Recent partner/opponent costs and a small first-game newcomer bonus | Full fairness dashboard and calibrated match-quality metrics |
 | Session-close Glicko-2 periods, rating history, and audit records | Empirical validation of the individual doubles adaptation |
 | Responsive organizer interface, local Live View, reduced-motion support, and 48-hour browser sessions with copied snapshot links | Hosted organizer authentication, authorization, and multi-organizer access |
@@ -94,9 +94,10 @@ Choose **Team 1 Wins** or **Team 2 Wins** when a game finishes.
 
 The separate Attendance navigation and header session selector are removed.
 **Players & check-in** opens the player list during play. Desktop court controls
-remain visible while long queue and Up Next lists scroll inside their panels.
-Up Next previews all compatible waiting-player groups and shows teams and
-matches ahead; it is not a clock-time estimate or a reservation. Live View shows
+remain visible while queue and Up Next lists scroll. Sessions with three or more
+courts scroll the queue view as one page so both court rows can be read. Up Next
+previews all compatible waiting-player groups and shows teams and matches ahead;
+it is not a clock-time estimate or a reservation. Live View shows
 the same upcoming list without game controls. Game results and Live Standings
 are side by side on desktop and stacked on narrow screens.
 
@@ -242,10 +243,22 @@ not a no-show. Session closing performs the same classification if the threshold
 has passed. No warnings, bans, deposits, or future-session penalties are sent or
 applied in this MVP.
 
-Pausing drops the player out of the queue while keeping them present. Rejoining
-gets a new ticket. Check-out removes the player from the queue. Resolve an assigned
-or playing game before a participant leaves: cancel an incomplete game with a
-reason, then check the departing player out. Incomplete games never affect ratings.
+Taking a temporary break removes a waiting player from match selection while keeping
+them present and preserving their queue ticket. Rejoining restores that place and
+restarts the wait timer. The next match is recalculated; a browser Up Next preview
+does not reserve a fixed team. Check-out or lost eligibility clears the ticket, so a
+later return gets a new place. Resolve an assigned or playing game before a participant
+leaves: cancel an incomplete game with a reason, then check the departing player out.
+Incomplete games never affect ratings.
+
+Live queue keeps resting players in the same list, with **On break** beside their
+name and a **Return to queue** button. The pencil beside a name opens an editor;
+saving preserves player identity, results, and queue priority.
+Players & check-in offers the same action and shows whether their place is held. A
+temporary break holds priority for the rest of the active session until the player
+returns, checks out, or loses eligibility. Saving unchanged eligibility leaves them
+on break. A ticket erased by an older app version cannot be recovered; those players
+can return at the back.
 
 ## Queue and anti-stacking algorithm
 
@@ -266,8 +279,12 @@ before the next court is assigned. Ties are deterministic.
 ### Play modes and partner preferences
 
 Session setup offers Balanced, Social Mix, Skill Separated, Winners / Losers,
-Skill Courts, King/Queen, and Club Wars. Mixed Doubles is shown disabled in the
-skills-only setup, since it requires player categories. Each court fill still
+Skill Courts, King/Queen, and Club Wars. During an active session, **Change Mode**
+opens the full matching-mode picker. Applying a new mode replans unstarted Up Next
+matches for everyone waiting while preserving queue tickets and wait priority;
+games already on court continue unchanged. Mode-specific requirements can leave
+players waiting until a compatible group is available. Mixed Doubles requires
+player categories. Each court fill still
 requires four present and eligible players. Social Mix scores recent partner and
 opponent repetition without using ratings. Skill modes restrict candidate pools
 to one configured rating band. Mixed Doubles requires two organizer-confirmed
@@ -523,6 +540,14 @@ See [docs/activity-log.md](docs/activity-log.md) for checks actually performed a
 limitations. There is no claim of live Reclub, physical-device, Safari/Firefox,
 hosted security, or production verification.
 
+The browser runtime has a separate break-flow regression using the same optional
+Playwright Core/Chromium prerequisites. Serve the browser page with
+`python3 -m http.server --bind 127.0.0.1 8083 --directory web`, then run
+`node tests/browser-break-flow.cjs http://127.0.0.1:8083`. This check uses isolated,
+synthetic browser storage and exercises both visible return controls, matching while
+paused, return priority, reload/snapshot sharing, check-out, eligibility, legacy
+records, and closed sessions. Desktop and mobile checks reject horizontal overflow.
+
 ## Repository map
 
 ```text
@@ -554,6 +579,41 @@ CONTRIBUTING.md
 SECURITY.md
 LICENSE
 ```
+
+## Substitute a player
+
+Open **Game options** beside **On court** to choose **Substitute player** or
+**Cancel game**. Choose the departing player and a replacement from the queue (including
+Up Next). The departing player always remains checked in and goes on break with
+queue place held. The earliest available queued player is suggested. Choosing
+someone later shows a queue-priority warning. A manual substitution can override team balance, mode rules, and pair preferences; the organizer confirms that choice.
+
+The replacement takes the same court and team side. Up Next is recalculated. In the
+SQLite organizer, taking someone from a reserved, unstarted game releases that plan,
+preserves the other players' tickets, and tries to plan that court again. Someone
+already playing on another court, on break, absent, or ineligible cannot substitute.
+
+A player departing a started game gets a fresh ticket before going on break; their
+old playing ticket and the replacement's ticket are not exchanged. Returning holds
+that fresh place. Check-out remains a separate action in Players & check-in. The
+game and its substitution
+history remain saved. Details are inside Game options and Game results, keeping the
+court cards compact.
+
+For a started game with substitutions, the team result stays recorded and each
+participant counts once in Games played when the game completes, even if they leave
+and return more than once. No participant receives an individual win, loss, rating
+observation, or inferred partner/opponent or winners/losers history from that game.
+Consequently, Games played can exceed Wins plus Losses. Cancellation counts no games.
+Replacing someone before an unstarted game retains ordinary result/rating treatment;
+a manually changed unstarted lineup must be cancelled rather than rebuilt, preserving
+its history.
+
+Existing browser v1 sessions remain usable. The first substitution promotes that
+session to v2; older browser engines reject its copied snapshot instead of ignoring
+substitution rules. Browser data stays on-device. SQLite initialization adds the
+substitution-history table and advances database v2 to v3 without clearing existing
+sessions, rosters, games, or ratings.
 
 ## Next development steps
 

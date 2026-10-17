@@ -108,4 +108,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS roster_session ON roster(id_session,queue_state,ticket);
 CREATE INDEX IF NOT EXISTS games_session ON games(id_session,status);
-PRAGMA user_version = 2;
+CREATE TABLE IF NOT EXISTS game_substitutions (
+  id INTEGER PRIMARY KEY,
+  id_game INTEGER NOT NULL REFERENCES games(id),
+  outgoing_id INTEGER NOT NULL REFERENCES roster(id),
+  incoming_id INTEGER NOT NULL REFERENCES roster(id),
+  side TEXT NOT NULL CHECK (side IN ('a','b')),
+  during_play INTEGER NOT NULL CHECK (during_play IN (0,1)),
+  at REAL NOT NULL,
+  disposition TEXT NOT NULL CHECK (disposition IN ('break','checkout')),
+  CHECK (outgoing_id != incoming_id)
+);
+CREATE INDEX IF NOT EXISTS substitutions_game ON game_substitutions(id_game,id);
+PRAGMA user_version = 3;
