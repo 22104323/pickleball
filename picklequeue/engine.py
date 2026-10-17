@@ -52,7 +52,7 @@ class Engine:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise Problem('Unsupported database version; no data was changed.')
             if version == 1:
                 db.execute('BEGIN IMMEDIATE')
@@ -153,20 +153,28 @@ class Engine:
                 game['players'] = [dict(p) for p in db.execute('''SELECT gp.*,m.name,m.gender FROM game_players gp
                     JOIN roster r ON r.id=gp.id_roster JOIN members m ON m.id=r.id_member
                     WHERE gp.id_game=? ORDER BY gp.side,gp.id_roster''', (game['id'],))]
+                game['substitutions'] = [dict(change) for change in db.execute('''SELECT gs.*,om.name AS outgoing_name,im.name AS incoming_name
+                    FROM game_substitutions gs JOIN roster outgoing ON outgoing.id=gs.outgoing_id
+                    JOIN members om ON om.id=outgoing.id_member JOIN roster incoming ON incoming.id=gs.incoming_id
+                    JOIN members im ON im.id=incoming.id_member WHERE gs.id_game=? ORDER BY gs.id''', (game['id'],))]
+                game['rating_eligible'] = not any(change['during_play'] for change in game['substitutions'])
                 games.append(game)
             audit = [dict(a) for a in db.execute('SELECT * FROM audit_log WHERE id_session=? ORDER BY id DESC LIMIT 30', (id_session,))]
             completed = [g for g in games if g['status'] == 'completed']
-            wins, latest = {}, {}
+            wins, losses, latest = {}, {}, {}
             for game in completed:
+                if not game['rating_eligible']:
+                    continue
                 for player in game['players']:
                     won = (game['score_a'] > game['score_b']) == (player['side'] == 'a')
                     id_player = player['id_roster']
                     wins[id_player] = wins.get(id_player, 0) + int(won)
+                    losses[id_player] = losses.get(id_player, 0) + int(not won)
                     latest.setdefault(id_player, 'winner' if won else 'loser')
             standings = []
             for player in players:
                 player['wins'] = wins.get(player['id'], 0)
-                player['losses'] = player['games_played'] - player['wins']
+                player['losses'] = losses.get(player['id'], 0)
                 player['last_outcome'] = latest.get(player['id'])
                 standings.append({key: player[key] for key in ('id','name','wins','losses','games_played')})
             standings.sort(key=lambda player: (-player['wins'], player['games_played'] == 0, player['losses'], player['name'].casefold(), player['id']))
@@ -401,6 +409,9 @@ class Engine:
                      player['base_volatility'] if player['games_played'] else member['volatility'], id_roster))
                 if player['membership'] == 'active' and player['waiver'] == 'valid':
                     self.enqueue(db, id_session, id_roster)
+            elif action == 'rename':
+                name = text(data.get('name'), 'Player name', 80)
+                db.execute('UPDATE members SET name=? WHERE id=?', (name, player['id_member']))
             elif action == 'eligibility':
                 membership, waiver = data.get('membership'), data.get('waiver')
                 if membership not in ('active','expired','unknown') or waiver not in ('valid','missing','unknown'):
@@ -410,7 +421,7 @@ class Engine:
                 db.execute('UPDATE roster SET membership=?,waiver=? WHERE id=?', (membership, waiver, id_roster))
                 if membership != 'active' or waiver != 'valid':
                     db.execute("UPDATE roster SET queue_state='off',ticket=NULL,queued_at=NULL WHERE id=?", (id_roster,))
-                elif player['attendance'] == 'present' and player['queue_state'] == 'off':
+                elif player['attendance'] == 'present' and player['queue_state'] == 'off' and (player['membership'] != 'active' or player['waiver'] != 'valid'):
                     self.enqueue(db, id_session, id_roster)
             elif action in ('pause', 'resume', 'checkout'):
                 if player['queue_state'] in ('assigned', 'playing'):
@@ -420,13 +431,16 @@ class Engine:
                         raise Problem('Player must be present with active membership and a valid waiver.')
                     if player['queue_state'] == 'waiting':
                         raise Problem('Player is already queued.', 409)
-                    self.enqueue(db, id_session, id_roster)
+                    self.rejoin(db, id_session, id_roster, player['ticket'])
+                elif action == 'pause':
+                    if player['queue_state'] != 'waiting':
+                        raise Problem('Player is not waiting in the queue.', 409)
+                    db.execute("UPDATE roster SET queue_state='off',queued_at=NULL WHERE id=?", (id_roster,))
                 else:
+                    if player['attendance'] != 'present':
+                        raise Problem('Player is not checked in.', 409)
                     db.execute("UPDATE roster SET queue_state='off',ticket=NULL,queued_at=NULL WHERE id=?", (id_roster,))
-                    if action == 'checkout':
-                        if player['attendance'] != 'present':
-                            raise Problem('Player is not checked in.', 409)
-                        db.execute("UPDATE roster SET attendance='left',checked_out_at=? WHERE id=?", (now, id_roster))
+                    db.execute("UPDATE roster SET attendance='left',checked_out_at=? WHERE id=?", (now, id_roster))
             else:
                 raise Problem('Unknown player action.')
             self.audit(db, id_session, f'player.{action}', {'id_roster': id_roster})
@@ -434,6 +448,12 @@ class Engine:
     def enqueue(self, db, id_session, id_roster):
         ticket = db.execute('UPDATE sessions SET next_ticket=next_ticket+1 WHERE id=? RETURNING next_ticket', (id_session,)).fetchone()[0]
         db.execute("UPDATE roster SET queue_state='waiting',ticket=?,queued_at=? WHERE id=?", (ticket, self.clock(), id_roster))
+
+    def rejoin(self, db, id_session, id_roster, ticket):
+        if ticket is None:
+            self.enqueue(db, id_session, id_roster)
+        else:
+            db.execute("UPDATE roster SET queue_state='waiting',queued_at=? WHERE id=?", (self.clock(), id_roster))
 
     def pair_players(self, id_session, revision, id_a, id_b):
         if type(id_a) is not int or type(id_b) is not int or id_a == id_b:
@@ -479,7 +499,7 @@ class Engine:
         local_roster = {p['id_member']:p['id'] for p in db.execute('SELECT id,id_member FROM roster WHERE id_session=?', (id_session,))}
         recent = db.execute('''SELECT DISTINCT g.id FROM games g JOIN game_players gp ON gp.id_game=g.id
             JOIN roster old ON old.id=gp.id_roster JOIN roster current ON current.id_member=old.id_member
-            WHERE g.status='completed' AND current.id_session=? ORDER BY g.id DESC LIMIT 10''', (id_session,)).fetchall()
+            WHERE g.status='completed' AND NOT EXISTS (SELECT 1 FROM game_substitutions gs WHERE gs.id_game=g.id AND gs.during_play=1) AND current.id_session=? ORDER BY g.id DESC LIMIT 10''', (id_session,)).fetchall()
         for game in recent:
             rows = db.execute('''SELECT r.id_member,gp.side FROM game_players gp
                 JOIN roster r ON r.id=gp.id_roster WHERE gp.id_game=?''', (game['id'],)).fetchall()
@@ -496,6 +516,33 @@ class Engine:
         with self.transaction(id_session, revision) as (db, session):
             return self.assign_courts(db, session, range(1, session['court_count']+1))
 
+    def configure_mode(self, id_session, revision, mode):
+        if not isinstance(mode, str) or mode not in MODES:
+            raise Problem('Choose a supported play mode.')
+        with self.transaction(id_session, revision) as (db, session):
+            previous_mode = session['mode']
+            if mode == previous_mode:
+                return {'previous_mode': previous_mode, 'mode': mode, 'released': [], 'assigned': [], 'messages': []}
+            planned = [dict(row) for row in db.execute(
+                "SELECT id,court FROM games WHERE id_session=? AND status='assigned' ORDER BY court,id",
+                (id_session,))]
+            for game in planned:
+                db.execute("UPDATE games SET status='cancelled',completed_at=? WHERE id=?",
+                           (self.clock(), game['id']))
+                db.execute("UPDATE roster SET queue_state='waiting' WHERE id IN (SELECT id_roster FROM active_assignments WHERE id_game=?)",
+                           (game['id'],))
+                db.execute('DELETE FROM active_assignments WHERE id_game=?', (game['id'],))
+            db.execute('UPDATE sessions SET mode=? WHERE id=?', (mode, id_session))
+            current = db.execute('SELECT * FROM sessions WHERE id=?', (id_session,)).fetchone()
+            result = self.assign_courts(db, current, range(1, current['court_count']+1))
+            self.audit(db, id_session, 'session.mode_changed', {
+                'previous_mode': previous_mode, 'mode': mode,
+                'released_games': [game['id'] for game in planned],
+                'assigned_games': result['assigned']})
+            return {'previous_mode': previous_mode, 'mode': mode,
+                    'released': [game['id'] for game in planned],
+                    'assigned': result['assigned'], 'messages': result['messages']}
+
     def assign_courts(self, db, session, courts, id_rebuild=None, excluded_teams=None):
         id_session = session['id']
         assigned, reasons = [], []
@@ -509,7 +556,7 @@ class Engine:
             pair_map[pair['id_player_b']] = pair['id_player_a']
         outcomes, last_courts = {}, {}
         for row in db.execute('''SELECT g.id,g.court,g.score_a,g.score_b,gp.id_roster,gp.side FROM games g
-            JOIN game_players gp ON gp.id_game=g.id WHERE g.id_session=? AND g.status='completed'
+            JOIN game_players gp ON gp.id_game=g.id WHERE g.id_session=? AND g.status='completed' AND NOT EXISTS (SELECT 1 FROM game_substitutions gs WHERE gs.id_game=g.id AND gs.during_play=1)
             ORDER BY g.id DESC''', (id_session,)):
             if row['id_roster'] in outcomes:
                 continue
@@ -664,12 +711,58 @@ class Engine:
                     raise Problem('A completed doubles game needs a winner.')
                 db.execute("UPDATE games SET status='completed',score_a=?,score_b=?,completed_at=? WHERE id=?", (score_a, score_b, self.clock(), id_game))
                 db.execute('DELETE FROM active_assignments WHERE id_game=?', (id_game,))
+                participants = {p['id'] for p in players}
+                participants.update(row[0] for row in db.execute('SELECT outgoing_id FROM game_substitutions WHERE id_game=? AND during_play=1', (id_game,)))
+                for id_player in participants:
+                    db.execute('UPDATE roster SET games_played=games_played+1 WHERE id=?', (id_player,))
                 for p in players:
-                    db.execute('UPDATE roster SET games_played=games_played+1 WHERE id=?', (p['id'],))
                     if p['attendance'] == 'present' and p['membership'] == 'active' and p['waiver'] == 'valid':
                         self.enqueue(db, id_session, p['id'])
                     else:
                         db.execute("UPDATE roster SET queue_state='off',ticket=NULL,queued_at=NULL WHERE id=?", (p['id'],))
+            elif action == 'substitute':
+                if game['status'] not in ('assigned', 'playing'):
+                    raise Problem('Only an active game can have a substitute.', 409)
+                outgoing_id = integer(data.get('outgoing_id'), 'Outgoing player', 1, 2**53-1)
+                incoming_id = integer(data.get('incoming_id'), 'Replacement player', 1, 2**53-1)
+                slot = db.execute('SELECT * FROM game_players WHERE id_game=? AND id_roster=?', (id_game, outgoing_id)).fetchone()
+                incoming = db.execute('SELECT r.*,m.rating,m.deviation,m.volatility FROM roster r JOIN members m ON m.id=r.id_member WHERE r.id=? AND r.id_session=?', (incoming_id,id_session)).fetchone()
+                if not slot or outgoing_id == incoming_id:
+                    raise Problem('Choose a current player and a different replacement.')
+                if not incoming or incoming['attendance'] != 'present' or incoming['membership'] != 'active' or incoming['waiver'] != 'valid' or incoming['queue_state'] not in ('waiting', 'assigned'):
+                    raise Problem('The replacement must be present, eligible, and in the queue.', 409)
+                disposition = data.get('disposition')
+                if disposition != 'break':
+                    raise Problem('A substitute always sends the departing player on a break.')
+                if db.execute('SELECT COUNT(*) FROM game_substitutions WHERE id_game=?', (id_game,)).fetchone()[0] >= 200:
+                    raise Problem('This game has reached its substitution limit.', 409)
+                reserved = db.execute("SELECT g.* FROM games g JOIN active_assignments a ON a.id_game=g.id WHERE a.id_roster=? AND g.id_session=? AND g.id!=? AND g.status='assigned'", (incoming_id,id_session,id_game)).fetchone()
+                if incoming['queue_state'] == 'assigned' and not reserved:
+                    raise Problem('The replacement is no longer available.', 409)
+                if reserved:
+                    db.execute("UPDATE games SET status='cancelled',completed_at=? WHERE id=?", (self.clock(),reserved['id']))
+                    db.execute("UPDATE roster SET queue_state='waiting' WHERE id IN (SELECT id_roster FROM game_players WHERE id_game=?)", (reserved['id'],))
+                    db.execute('DELETE FROM active_assignments WHERE id_game=?', (reserved['id'],))
+                    self.audit(db,id_session,'game.preview_released',{'id_game':reserved['id'],'for_substitution':id_game})
+                during_play = game['status'] == 'playing'
+                db.execute('INSERT INTO game_substitutions(id_game,outgoing_id,incoming_id,side,during_play,at,disposition) VALUES(?,?,?,?,?,?,?)', (id_game,outgoing_id,incoming_id,slot['side'],during_play,self.clock(),disposition))
+                db.execute('DELETE FROM active_assignments WHERE id_roster=?', (outgoing_id,))
+                db.execute('DELETE FROM game_players WHERE id_game=? AND id_roster=?', (id_game,outgoing_id))
+                db.execute('INSERT INTO game_players(id_game,id_roster,side,rating,deviation,volatility) VALUES(?,?,?,?,?,?)', (id_game,incoming_id,slot['side'],incoming['rating'],incoming['deviation'],incoming['volatility']))
+                db.execute('INSERT INTO active_assignments(id_roster,id_game) VALUES(?,?)', (incoming_id,id_game))
+                means = [db.execute('SELECT AVG(rating) FROM game_players WHERE id_game=? AND side=?', (id_game,side)).fetchone()[0] for side in ('a','b')]
+                expected = .5 if session['mode']=='social_mix' else 1/(1+10**((means[1]-means[0])/400))
+                db.execute("UPDATE games SET mean_a=?,mean_b=?,expected_a=?,cost=0,reason='Manual lineup change by organizer.' WHERE id=?", (*means,expected,id_game))
+                db.execute('UPDATE roster SET queue_state=? WHERE id=?', (game['status'],incoming_id))
+                if disposition == 'checkout':
+                    db.execute("UPDATE roster SET attendance='left',checked_out_at=?,queue_state='off',ticket=NULL,queued_at=NULL WHERE id=?", (self.clock(),outgoing_id))
+                else:
+                    if during_play:
+                        self.enqueue(db,id_session,outgoing_id)
+                    db.execute("UPDATE roster SET queue_state='off',queued_at=NULL WHERE id=?", (outgoing_id,))
+                if reserved:
+                    self.assign_courts(db,session,[reserved['court']])
+                self.audit(db,id_session,'game.substituted',{'id_game':id_game,'outgoing_id':outgoing_id,'incoming_id':incoming_id,'disposition':disposition})
             elif action == 'swap_winner':
                 if game['status'] != 'completed':
                     raise Problem('Only completed games have a winner to correct.', 409)
@@ -681,6 +774,8 @@ class Engine:
             elif action == 'rebuild':
                 if game['status'] != 'assigned':
                     raise Problem('Only an unstarted Up Next game can be rebuilt.', 409)
+                if db.execute('SELECT 1 FROM game_substitutions WHERE id_game=?', (id_game,)).fetchone():
+                    raise Problem('Cancel a manually changed lineup to plan a new match; its substitution history must be kept.', 409)
                 old_teams = [tuple(row['id_roster'] for row in db.execute(
                     'SELECT id_roster FROM game_players WHERE id_game=? AND side=? ORDER BY id_roster',
                     (id_game, side))) for side in ('a', 'b')]
@@ -703,7 +798,7 @@ class Engine:
                 self.audit(db, id_session, 'game.cancelled', {'id_game': id_game, 'reason': reason})
             else:
                 raise Problem('Unknown game action.')
-            if action not in ('cancel', 'swap_winner', 'rebuild'):
+            if action not in ('cancel', 'swap_winner', 'rebuild', 'substitute'):
                 detail = {'id_game': id_game}
                 if action == 'complete' and 'winner' in data:
                     detail.update(winner=data['winner'], result_type='winner_only')
@@ -724,7 +819,7 @@ class Engine:
             players = db.execute('SELECT * FROM roster WHERE id_session=?', (id_session,)).fetchall()
             bases = {p['id']: Rating(p['base_rating'],p['base_deviation'],p['base_volatility']) for p in players}
             observations = {p['id']: [] for p in players}
-            for game in db.execute("SELECT * FROM games WHERE id_session=? AND status='completed'", (id_session,)):
+            for game in db.execute("SELECT g.* FROM games g WHERE id_session=? AND status='completed' AND NOT EXISTS (SELECT 1 FROM game_substitutions gs WHERE gs.id_game=g.id AND gs.during_play=1)", (id_session,)):
                 gp = db.execute('SELECT * FROM game_players WHERE id_game=?', (game['id'],)).fetchall()
                 for p in gp:
                     partner = next(q for q in gp if q['side'] == p['side'] and q['id_roster'] != p['id_roster'])

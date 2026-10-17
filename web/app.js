@@ -14,6 +14,8 @@ let searchTerm = '';
 const views = ['setup','queue','results','activity','live'];
 const levelOptions = [['1000','Beginner (~2.0 DUPR)'],['1100','Adv. Beginner (~2.5 DUPR)'],['1200','Intermediate (~3.0 DUPR)'],['1400','Adv. Intermediate (~3.5 DUPR)'],['1600','Advanced (~4.0 DUPR)'],['1800','Expert (~4.5+ DUPR)']];
 const modeNames = {balanced:'Balanced',social_mix:'Social Mix',skill_separated:'Skill Separated',winners_losers:'Winners / Losers',skill_courts:'Skill Courts',mixed_doubles:'Mixed Doubles',king_queen:'King/Queen of the Court',club_wars:'Club Wars'};
+const modeDescriptions = {balanced:'Balance team ratings and avoid recent repeats.',social_mix:'Rotate partners first and spread opponents. Ratings are not used.',skill_separated:'Keep similar skill levels together. A court may wait.',winners_losers:'Winners play winners and losers play losers.',skill_courts:'Give each skill group its own courts.',mixed_doubles:'One man and one woman on each team; requires player categories.',king_queen:'Winners move up a court; losers move down.',club_wars:'Teams use the groups assigned during player review.'};
+const modeOrder = ['balanced','social_mix','skill_separated','winners_losers','skill_courts','mixed_doubles','king_queen','club_wars'];
 let importTab = 'paste';
 let reviewDraft = [];
 let reviewPairs = [];
@@ -293,6 +295,8 @@ function button(label, attrs, kind='btn-outline') { return `<button class="btn b
 function playerButton(player, action, label, kind='btn-outline') { return button(label,`data-player="${player.id}" data-player-action="${action}"`,kind); }
 function empty(title, description, action='') { return `<div class="empty-state"><h3>${e(title)}</h3><p>${e(description)}</p>${action}</div>`; }
 function closed() { return state?.session.status === 'closed'; }
+function onBreak(player) { return !closed() && player.attendance==='present' && player.eligible && player.queue_state==='off'; }
+function breakLabel(player) { return player.ticket!==null ? 'On break · place held' : 'On break'; }
 
 function syncNavigation() {
   const params = new URLSearchParams(location.hash.slice(1));
@@ -399,9 +403,47 @@ function gameTeams(game) {
   }).join('')}</div>`).join('');
 }
 
+function substitutionHistory(game) {
+  if (!game.substitutions?.length) return '';
+  return `<div class="substitution-history"><details><summary>${game.substitutions.length} substitution${game.substitutions.length===1?'':'s'}${game.rating_eligible===false?' · Participation only':''}</summary><ul>${game.substitutions.map(change=>`<li>${e(change.outgoing_name)} → ${e(change.incoming_name)} · Team ${change.side==='a'?'1':'2'} · ${change.disposition==='break'?'On break':'Checked out'}</li>`).join('')}</ul></details>${game.rating_eligible===false?'<p>No individual wins, losses, or rating changes.</p>':''}</div>`;
+}
+
+function substitutionCandidates(game) {
+  const ids=new Set(game.players.map(p=>p.id_roster));
+  return state.players.filter(p=>!ids.has(p.id)&&p.attendance==='present'&&p.eligible&&['waiting','assigned'].includes(p.queue_state)).sort((a,b)=>a.ticket-b.ticket||a.id-b.id);
+}
+
+function updateSubstitutionSummary() {
+  const dialog=$('#substitute-dialog');
+  const game=state.games.find(game=>game.id===Number(dialog.dataset.game));
+  if(!game) return;
+  const candidates=substitutionCandidates(game);
+  const incoming=state.players.find(p=>p.id===Number($('#substitute-incoming').value));
+  const outgoing=state.players.find(p=>p.id===Number($('#substitute-outgoing').value));
+  const index=candidates.findIndex(p=>p.id===incoming?.id);
+  $('#substitute-priority').textContent=index>0?`This skips ${index} earlier queued player${index===1?'':'s'}. ${candidates[0].name} has waited longest.`:incoming?`${incoming.name} is the earliest available queued player.`:'No eligible replacement is queued. Check a player in or return them from break first.';
+  $('#substitute-summary').textContent=outgoing&&incoming?`${incoming.name} replaces ${outgoing.name} on Team ${game.players.find(p=>p.id_roster===outgoing.id).side==='a'?'1':'2'}. ${outgoing.name} goes on break with ${game.status==='playing'?'a fresh':'their existing'} queue place held.`:'Choose the player who is leaving the court.';
+}
+
+function openSubstitution(id) {
+  const game=state.games.find(game=>game.id===id);
+  const dialog=$('#substitute-dialog');
+  dialog.dataset.game=id;
+  dialog.dataset.revision=state.session.revision;
+  $('#substitute-title').textContent=`Substitute on Court ${game.court}`;
+  $('#substitute-outgoing').innerHTML='<option value="">Choose a player</option>'+game.players.map(p=>`<option value="${p.id_roster}">${e(p.name)} · Team ${p.side==='a'?'1':'2'}</option>`).join('');
+  const candidates=substitutionCandidates(game);
+  const turns=new Map((browserMode?state.up_next||[]:stagedGames()).flatMap((g,index)=>g.players.map(p=>[p.id_roster,g.turn||index+1])));
+  $('#substitute-incoming').innerHTML=candidates.length?candidates.map((p,index)=>`<option value="${p.id}">${e(p.name)} · Queue ${index+1}${index===0?' · Suggested':''}${turns.has(p.id)?` · Up Next ${turns.get(p.id)}`:''}</option>`).join(''):'<option value="">No eligible players queued</option>';
+  $('#substitute-submit').disabled=!candidates.length;
+  $('#substitute-result-note').textContent=game.status==='playing'?'This started game will count participation only. Its result stays recorded, with no individual wins, losses, or rating changes.':'This game has not started. Its replacement lineup remains rated.';
+  updateSubstitutionSummary();
+  openDialog('substitute-dialog');
+}
+
 function courtCard(court, readOnly = false) {
   const game=state.games.find(game=>game.court===court&&['assigned','playing'].includes(game.status));
-  if(game?.status==='playing')return `<article class="court-card is-playing" data-court="${court}"><div class="court-top"><h3>Court ${court}</h3><span class="chip active">On court</span>${readOnly?'':button('Cancel game',`data-cancel="${game.id}"`,'btn-court-cancel')}</div><div class="court-teams">${gameTeams(game)}</div>${readOnly?'':`<div class="winner-actions">${button('Team 1 Wins',`data-winner="${game.id}" data-side="a"`,'btn-team-one')}${button('Team 2 Wins',`data-winner="${game.id}" data-side="b"`,'btn-team-two')}</div>`}</article>`;
+  if(game?.status==='playing')return `<article class="court-card is-playing" data-court="${court}"><div class="court-top"><h3>Court ${court}</h3><span class="chip active">On court</span>${readOnly?'':button('Game options',`data-game-options="${game.id}"`,'btn-court-cancel')}</div><div class="court-teams">${gameTeams(game)}</div>${readOnly?'':`<div class="winner-actions">${button('Team 1 Wins',`data-winner="${game.id}" data-side="a"`,'btn-team-one')}${button('Team 2 Wins',`data-winner="${game.id}" data-side="b"`,'btn-team-two')}</div>`}</article>`;
   const number=game?stagedGames().findIndex(item=>item.id===game.id)+1:null;
   const teams=game?['a','b'].map(side=>`<div>${game.players.filter(p=>p.side===side).map(p=>`<span>${e(p.name)}</span>`).join('')}</div>`):[];
   return `<article class="court-card court-available" data-court="${court}"><div class="court-top"><h3>Court ${court}</h3><span class="chip">${closed()?'Session closed':'Available'}</span></div><div class="court-preview">${game?`${teams[0]}<span class="versus">vs</span>${teams[1]}`:`<p>${closed()?'Results are saved for this session.':(browserMode?'Waiting for four ready players.':'Build Up Next from checked-in players.')}</p>`}</div>${game&&!readOnly?`<div class="available-actions">${button(`Start Up Next ${number}`,`data-game="${game.id}" data-game-action="start"`,'btn-primary')}</div>`:''}</article>`;
@@ -435,9 +477,19 @@ function setupView() {
   const absent=state.players.filter(player=>player.attendance!=='present');
   const present=state.players.filter(player=>player.attendance==='present');
 
-  const descriptions={balanced:'Balance teams by rating and avoid recent repeats.',social_mix:'Rotate partners first and spread opponents. Ratings are not used.',skill_separated:'Keep similar skill levels together. A court may wait.',winners_losers:'Winners play winners and losers play losers.',skill_courts:'Give each skill group its own courts.',mixed_doubles:'Requires player categories supplied during import.',king_queen:'Winners move up a court; losers move down.',club_wars:'Teams use the groups assigned during player review.'};
-  const modeOption=mode=>`<label class="mode-option ${state.session.mode===mode?'selected':''}"><input type="radio" name="setup-mode" data-setup-setting="mode" value="${mode}" ${state.session.mode===mode?'checked':''} ${started||closed()||mode==='mixed_doubles'?'disabled':''}><span><strong>${e(modeNames[mode])}${mode==='balanced'?' <span class="mode-tag">Recommended</span>':''}</strong><small>${e(descriptions[mode])}</small></span></label>`;
-  const playerCard=player=>`<li class="setup-player" data-name="${e(player.name.toLowerCase())}"><div class="setup-player-heading"><strong>${e(player.name)}</strong><span class="chip ${player.attendance==='present'?'active':''}">${player.attendance==='present'?'Checked in':'Not Yet Here'}</span></div><label class="setup-skill">Skill<select data-setup-rating="${player.id}" aria-label="Skill for ${e(player.name)}" ${started||closed()?'disabled':''}><option value="${player.rating}">${e(player.band)} · ${Math.round(player.rating)}</option>${levelOptions.filter(([rating])=>Number(rating)!==player.rating).map(([rating,label])=>`<option value="${rating}">${e(label)}</option>`).join('')}</select></label><div class="setup-player-actions">${!closed()&&(!player.eligible||player.attendance!=='present')?`<button class="btn btn-primary" data-setup-checkin="${player.id}" ${busy?'disabled':''}>${player.attendance==='present'?'Join queue':'Check in'}</button>`:player.attendance==='present'&&!closed()&&!['assigned','playing'].includes(player.queue_state)?playerButton(player,'checkout','Check out'):''}${!started&&!closed()?playerButton(player,'remove','Remove','btn-danger'):''}</div></li>`;
+  const modeOption=mode=>`<label class="mode-option ${state.session.mode===mode?'selected':''}"><input type="radio" name="setup-mode" data-setup-setting="mode" value="${mode}" ${state.session.mode===mode?'checked':''} ${started||closed()||mode==='mixed_doubles'?'disabled':''}><span><strong>${e(modeNames[mode])}${mode==='balanced'?' <span class="mode-tag">Recommended</span>':''}</strong><small>${e(modeDescriptions[mode])}</small></span></label>`;
+  const playerCard=player=>{
+    const resting=onBreak(player);
+    let actions='';
+    if (!closed()) {
+      if (!player.eligible||player.attendance!=='present') actions=`<button class="btn btn-primary" data-setup-checkin="${player.id}" ${busy?'disabled':''}>${player.attendance==='present'?'Join queue':'Check in'}</button>`;
+      else if (resting) actions=playerButton(player,'resume','Return to queue','btn-primary')+playerButton(player,'checkout','Check out');
+      else if (player.queue_state==='waiting') actions=playerButton(player,'pause','Take a break')+playerButton(player,'checkout','Check out');
+      if (!started) actions+=playerButton(player,'remove','Remove','btn-danger');
+    }
+    const status=resting?breakLabel(player):['assigned','playing'].includes(player.queue_state)?'On court':player.attendance==='present'?'Checked in':'Not Yet Here';
+    return `<li class="setup-player" data-player-card="${player.id}" data-name="${e(player.name.toLowerCase())}"><div class="setup-player-heading">${playerName(player)}<span class="chip ${player.attendance==='present'?'active':''}">${e(status)}</span></div><label class="setup-skill">Skill<select data-setup-rating="${player.id}" aria-label="Skill for ${e(player.name)}" ${started||closed()?'disabled':''}><option value="${player.rating}">${e(player.band)} · ${Math.round(player.rating)}</option>${levelOptions.filter(([rating])=>Number(rating)!==player.rating).map(([rating,label])=>`<option value="${rating}">${e(label)}</option>`).join('')}</select></label><div class="setup-player-actions">${actions}</div></li>`;
+  };
   return `<div class="setup-page"><section class="setup-progress panel"><h2>${started?'SESSION PLAYERS':'OPEN PLAY IN 60 SECONDS'}</h2><ol><li class="complete"><span>✓</span>Set up session</li><li class="current"><span>2</span>Add players<small>${ready}/4 ready</small></li><li class="${started?'complete':''}"><span>${started?'✓':'3'}</span>Start</li></ol></section><div class="setup-config"><section class="panel setup-card" data-tour-target="session"><div class="setup-setting"><label for="setup-name">Session name</label><input id="setup-name" data-setup-setting="name" maxlength="120" value="${e(state.session.name)}" ${started||closed()?'disabled':''}></div><div class="setup-setting"><label for="setup-courts">Courts</label><div class="court-stepper"><button class="btn btn-outline" data-court-step="-1" aria-label="Fewer courts" ${started||closed()||state.session.court_count<=1?'disabled':''}>−</button><input id="setup-courts" data-setup-setting="court_count" type="number" min="1" max="8" value="${state.session.court_count}" aria-label="Number of courts" ${started||closed()?'disabled':''}><button class="btn btn-outline" data-court-step="1" aria-label="More courts" ${started||closed()||state.session.court_count>=8?'disabled':''}>+</button></div></div></section><details class="panel setup-card setup-options"><summary>Session settings</summary><p>Doubles · ratings finalize when the session closes.</p><label for="setup-capacity">Player capacity</label><input id="setup-capacity" data-setup-setting="max_players" type="number" min="4" max="200" value="${state.session.max_players}" ${started||closed()?'disabled':''}></details><section class="panel setup-card" data-tour-target="mode"><h2>Matching mode</h2><div class="mode-picker">${['balanced','social_mix','skill_separated','winners_losers'].map(modeOption).join('')}<details class="more-modes"><summary><span><strong>More modes &amp; formats</strong><small>Skill Courts · Mixed Doubles · King/Queen · Club Wars</small></span></summary>${['skill_courts','mixed_doubles','king_queen','club_wars'].map(modeOption).join('')}</details></div></section></div><section class="panel setup-roster" data-tour-target="players"><div class="setup-roster-heading"><h2>Add players <span class="section-count">(${state.players.length})</span></h2>${!closed()?button('Import player list','data-open="import-dialog"','btn-primary'):''}</div><div class="queue-search"><label class="sr-only" for="player-search">Search players</label><input id="player-search" type="search" placeholder="Search players…" value="${e(searchTerm)}"></div><div class="setup-roster-list">${absent.length?`<div class="setup-group-heading"><h3>Not Yet Here (${absent.length})</h3><button class="btn btn-small btn-primary" data-setup-checkin="all" ${closed()?'disabled':''}>Check in all</button></div><ul class="setup-players">${absent.map(playerCard).join('')}</ul>`:''}${present.length?`<div class="setup-group-heading"><h3>Checked in (${present.length})</h3></div><ul class="setup-players">${present.map(playerCard).join('')}</ul>`:''}${!state.players.length?empty('Your roster starts here','Paste player names or use a public Reclub link. No login needed.',button('Import player list','data-open="import-dialog"','btn-primary')+' '+button('Load demo roster','data-action="demo"')):''}</div></section><div class="setup-start" data-tour-target="start"><span>${ready}/4 ready · ${present.length} checked in</span><button class="btn btn-primary" data-setup-start ${!started&&ready<4?'disabled':''}>${started||closed()?'Back to Live queue':'Start session'}</button></div></div>`;
 }
 
@@ -450,11 +502,20 @@ async function createSetupSession() {
   } catch(error) {message(error.message,true);} finally {busy=false;}
 }
 
+function playerName(player) {
+  return `<div class="player-name"><strong>${e(player.name)}</strong>${onBreak(player)?'<span class="break-badge">On break</span>':''}${!closed()?`<button type="button" class="name-edit-button" data-edit-name="${player.id}" aria-label="Edit name for ${e(player.name)}" title="Edit name" ${busy?'disabled':''}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m16 3 5 5-13 13H3v-5Z M14 5l5 5"/></svg></button>`:''}</div>`;
+}
+
 function queueView() {
   const queued=state.players.filter(player=>['waiting','assigned'].includes(player.queue_state));
+  const listed=state.players.filter(player=>['waiting','assigned'].includes(player.queue_state)||onBreak(player));
+  const positions=new Map(queued.map((player,index)=>[player.id,index+1]));
   const staged=browserMode?(state.up_next||[]):stagedGames();
   const turns=new Map(staged.flatMap(game=>game.players.map(player=>[player.id_roster,game.turn])));
-  return `<section aria-label="Live Courts"><div class="section-title"><h2>Live Courts <span class="section-count">(${state.session.court_count})</span></h2></div><div class="courts">${Array.from({length:state.session.court_count},(_,i)=>courtCard(i+1)).join('')}</div></section><section aria-label="Upcoming matches"><div class="section-title upcoming-title"><h2>Up Next <span class="section-count">(${staged.length})</span></h2><span class="muted">${e(modeNames[state.session.mode])}</span></div><div class="rotation-layout"><section class="queue-panel" aria-labelledby="queue-title"><div class="queue-heading"><h3 id="queue-title">Queue <span>(${queued.length})</span></h3>${!closed()?button('+ Add player','data-open="import-dialog"'):''}</div><div class="queue-search"><label class="sr-only" for="player-search">Search players</label><input id="player-search" type="search" placeholder="Search players…" value="${e(searchTerm)}"></div>${queued.length?`<ol class="queue-list">${queued.map((player,index)=>`<li class="queue-entry ${player.queue_state==='assigned'?'reserved':''}" data-name="${e(player.name.toLowerCase())}"><span class="queue-position">${index+1}</span><div><strong>${e(player.name)}</strong><small>${e(player.band)} · ${player.games_played} games · Waiting ${Math.floor(player.wait_minutes)}m</small>${player.queue_state==='assigned'?'<span class="reserved-label">Reserved in Up Next</span>':browserMode?`<span class="reserved-label">${turns.has(player.id)?`Up Next ${turns.get(player.id)} · ${turns.get(player.id)===1?'stay nearby':`${turns.get(player.id)-1} match${turns.get(player.id)===2?'':'es'} ahead`}`:'Waiting for a valid match'}</span>`:''}</div>${player.queue_state==='waiting'?playerButton(player,'pause','Take a break'):''}</li>`).join('')}</ol>`:empty(closed()?'Session complete':'No players queued',closed()?'Attendance and results remain saved.':'Open the player list to check players in and add them to the queue.',closed()?'':button('Check in players','data-view="setup"','btn-primary'))}</section><div class="up-next-area"><div class="up-next-grid">${upNextItems(staged)}</div><p class="rotation-note">${browserMode?'Order shows matches ahead, not minutes. Results and player changes can update later matches.':state.session.mode==='social_mix'?'Social Mix prepares one match at a time. Start it before building the next mix.':'Up Next reserves four players for an available court. They remain here until you start or cancel the match.'}</p></div></div></section>${!state.players.length&&!closed()?`<div class="helper-strip"><strong>Start with your roster</strong><span>Paste a player list, use a Reclub link, or try synthetic demo players.</span>${button('Load demo roster','data-action="demo"')}</div>`:''}<div class="session-tools">${button('Players & check-in','data-view="setup"')}${!closed()?button('Close session & finalize ratings','data-confirm="close"'):''}</div>`;
+  return `<section aria-label="Live Courts" data-court-count="${state.session.court_count}"><div class="section-title"><h2>Live Courts <span class="section-count">(${state.session.court_count})</span></h2></div><div class="courts">${Array.from({length:state.session.court_count},(_,i)=>courtCard(i+1)).join('')}</div></section><section aria-label="Upcoming matches"><div class="section-title upcoming-title"><h2>Up Next <span class="section-count">(${staged.length})</span></h2><button class="btn btn-outline btn-small" type="button" data-change-mode ${closed()?'disabled':''}>Change Mode · ${e(modeNames[state.session.mode])}</button></div><div class="rotation-layout"><section class="queue-panel" aria-labelledby="queue-title"><div class="queue-heading"><h3 id="queue-title">Queue <span>(${queued.length})</span></h3>${!closed()?button('+ Add player','data-open="import-dialog"'):''}</div><div class="queue-search"><label class="sr-only" for="player-search">Search players</label><input id="player-search" type="search" placeholder="Search players…" value="${e(searchTerm)}"></div>${listed.length?`<ol class="queue-list">${listed.map(player=>{
+    const resting=onBreak(player);
+    return `<li class="queue-entry ${resting?'on-break':player.queue_state==='assigned'?'reserved':''}" data-queue-player="${player.id}" data-name="${e(player.name.toLowerCase())}"><span class="queue-position" ${resting?'aria-label="On break"':''}>${resting?'—':positions.get(player.id)}</span><div>${playerName(player)}<small>${e(player.band)} · ${player.games_played} games · ${resting?(player.ticket!==null?'Place held':'Returns at back of queue'):`Waiting ${Math.floor(player.wait_minutes)}m`}</small>${resting?'':player.queue_state==='assigned'?'<span class="reserved-label">Reserved in Up Next</span>':browserMode?`<span class="reserved-label">${turns.has(player.id)?`Up Next ${turns.get(player.id)} · ${turns.get(player.id)===1?'stay nearby':`${turns.get(player.id)-1} match${turns.get(player.id)===2?'':'es'} ahead`}`:'Waiting for a valid match'}</span>`:''}</div>${resting?playerButton(player,'resume','Return to queue','btn-primary'):player.queue_state==='waiting'&&!closed()?playerButton(player,'pause','Take a break'):''}</li>`;
+  }).join('')}</ol>`:empty(closed()?'Session complete':'No players queued',closed()?'Attendance and results remain saved.':'Open the player list to check players in and add them to the queue.',closed()?'':button('Check in players','data-view="setup"','btn-primary'))}</section><div class="up-next-area"><div class="up-next-grid">${upNextItems(staged)}</div><p class="rotation-note">${browserMode?'Order shows matches ahead, not minutes. Results and player changes can update later matches.':state.session.mode==='social_mix'?'Social Mix prepares one match at a time. Start it before building the next mix.':'Up Next reserves four players for an available court. They remain here until you start or cancel the match.'}</p></div></div></section>${!state.players.length&&!closed()?`<div class="helper-strip"><strong>Start with your roster</strong><span>Paste a player list, use a Reclub link, or try synthetic demo players.</span>${button('Load demo roster','data-action="demo"')}</div>`:''}<div class="session-tools">${button('Players & check-in','data-view="setup"')}${!closed()?button('Close session & finalize ratings','data-confirm="close"'):''}</div>`;
 }
 
 function rosterView() {
@@ -467,7 +528,7 @@ function rosterView() {
     const label=pairSelection&&pairSelection!==player.id?`Pair with ${e(selected?.name||'selected player')}`:pairSelection===player.id?'Cancel pair':'Pair';
     return button(label,`data-pair-player="${player.id}"`);
   };
-  return `<section class="panel">${tableToolbar('Player roster','RSVP is a plan. Check-in is presence. Pair preferences keep chosen partners together.')}${players.length?`<div class="attendance-toolbar">${!closed()?button('Check in all','data-action="checkin-all"','btn-primary'):''}${pairNotice}</div><div class="table-wrap"><table class="attendance-table"><thead><tr><th>Player</th><th>RSVP</th><th>Attendance</th><th>Eligibility</th><th>Rotation</th><th>Pairing</th><th>Action</th></tr></thead><tbody>${players.map(p=>`<tr class="${p.paired_roster_id?'paired-row ':''}${p.id===pairSelection?'pairing-selected':''}" data-name="${e(p.name.toLowerCase())}"><td data-label="Player"><div class="player-cell">${avatar(p.name)}<div><strong>${e(p.name)}</strong><small>${e(p.external_id)} · ${e(p.source)}</small></div></div></td><td data-label="RSVP">${e(p.rsvp)}</td><td data-label="Attendance"><span class="chip ${p.attendance==='present'?'active':p.attendance==='no_show'?'warn':''}">${e(p.attendance.replace('_',' '))}${p.is_late?' · late':''}</span></td><td data-label="Eligibility">${closed()?e(`${p.membership} / ${p.waiver}`):`<div class="inline-eligibility" data-eligibility="${p.id}"><select aria-label="Membership for ${e(p.name)}" data-membership ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>${['active','expired','unknown'].map(x=>`<option ${p.membership===x?'selected':''}>${x}</option>`).join('')}</select><select aria-label="Waiver for ${e(p.name)}" data-waiver ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>${['valid','missing','unknown'].map(x=>`<option ${p.waiver===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn-small btn-outline" data-save-eligibility="${p.id}" aria-label="Save eligibility for ${e(p.name)}" ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>Save</button></div>`}</td><td data-label="Rotation">${p.eligible?e(p.queue_state==='off'?'Not queued':p.queue_state):'<span class="chip blocked">Not eligible</span>'}</td><td data-label="Pairing"><div class="pair-control">${closed()?'—':pairAction(p)}</div></td><td data-label="Action"><div class="row-actions">${closed()?'—':p.attendance!=='present'?playerButton(p,'checkin','Check in','btn-primary'):['assigned','playing'].includes(p.queue_state)?'On court':`${p.queue_state==='waiting'?playerButton(p,'pause','Pause'):p.eligible?playerButton(p,'resume','Rejoin','btn-primary'):''}${playerButton(p,'checkout','Check out')}`}</div></td></tr>`).join('')}</tbody></table></div>`:empty('Your roster starts here','Paste a player list or load a public Reclub event. Review names and pair preferences before adding.',`${button('Import player list','data-open="import-dialog"','btn-primary')} ${button('Load demo roster','data-action="demo"')}`)}</section>${!closed()?`<div class="session-tools">${button('Reconcile absent RSVPs','data-confirm="reconcile"')}${button('Close session & finalize ratings','data-confirm="close"')}</div>`:''}<div class="helper-strip"><span>Reclub sign-ups start in Not Yet Here. A player joins the queue only after physical check-in and eligibility confirmation.</span></div>`;
+  return `<section class="panel">${tableToolbar('Player roster','RSVP is a plan. Check-in is presence. Pair preferences keep chosen partners together.')}${players.length?`<div class="attendance-toolbar">${!closed()?button('Check in all','data-action="checkin-all"','btn-primary'):''}${pairNotice}</div><div class="table-wrap"><table class="attendance-table"><thead><tr><th>Player</th><th>RSVP</th><th>Attendance</th><th>Eligibility</th><th>Rotation</th><th>Pairing</th><th>Action</th></tr></thead><tbody>${players.map(p=>`<tr class="${p.paired_roster_id?'paired-row ':''}${p.id===pairSelection?'pairing-selected':''}" data-name="${e(p.name.toLowerCase())}"><td data-label="Player"><div class="player-cell">${avatar(p.name)}<div>${playerName(p)}<small>${e(p.external_id)} · ${e(p.source)}</small></div></div></td><td data-label="RSVP">${e(p.rsvp)}</td><td data-label="Attendance"><span class="chip ${p.attendance==='present'?'active':p.attendance==='no_show'?'warn':''}">${e(p.attendance.replace('_',' '))}${p.is_late?' · late':''}</span></td><td data-label="Eligibility">${closed()?e(`${p.membership} / ${p.waiver}`):`<div class="inline-eligibility" data-eligibility="${p.id}"><select aria-label="Membership for ${e(p.name)}" data-membership ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>${['active','expired','unknown'].map(x=>`<option ${p.membership===x?'selected':''}>${x}</option>`).join('')}</select><select aria-label="Waiver for ${e(p.name)}" data-waiver ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>${['valid','missing','unknown'].map(x=>`<option ${p.waiver===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn-small btn-outline" data-save-eligibility="${p.id}" aria-label="Save eligibility for ${e(p.name)}" ${['assigned','playing'].includes(p.queue_state)?'disabled':''}>Save</button></div>`}</td><td data-label="Rotation">${p.eligible?e(p.queue_state==='off'?(p.ticket!==null?'On break · place held':'Not queued'):p.queue_state):'<span class="chip blocked">Not eligible</span>'}</td><td data-label="Pairing"><div class="pair-control">${closed()?'—':pairAction(p)}</div></td><td data-label="Action"><div class="row-actions">${closed()?'—':p.attendance!=='present'?playerButton(p,'checkin','Check in','btn-primary'):['assigned','playing'].includes(p.queue_state)?'On court':`${p.queue_state==='waiting'?playerButton(p,'pause','Pause'):p.eligible?playerButton(p,'resume','Rejoin','btn-primary'):''}${playerButton(p,'checkout','Check out')}`}</div></td></tr>`).join('')}</tbody></table></div>`:empty('Your roster starts here','Paste a player list or load a public Reclub event. Review names and pair preferences before adding.',`${button('Import player list','data-open="import-dialog"','btn-primary')} ${button('Load demo roster','data-action="demo"')}`)}</section>${!closed()?`<div class="session-tools">${button('Reconcile absent RSVPs','data-confirm="reconcile"')}${button('Close session & finalize ratings','data-confirm="close"')}</div>`:''}<div class="helper-strip"><span>Reclub sign-ups start in Not Yet Here. A player joins the queue only after physical check-in and eligibility confirmation.</span></div>`;
 }
 
 function standingsView() {
@@ -481,11 +542,11 @@ function liveView() {
 
 function resultsView() {
   const games = state.games.filter(g=>['completed','cancelled'].includes(g.status));
-  return `<div class="results-layout"><section class="panel results-panel">${tableToolbar('Game results',`${state.metrics.completed_games} completed · cancelled games do not affect ratings`,false)}${games.length?`<div class="table-wrap"><table class="result-table"><thead><tr><th>Game</th><th>Team 1</th><th>Team 2</th><th>Result</th><th>Correction</th></tr></thead><tbody>${games.map(g=>`<tr data-result-row="${g.id}"><td><strong>#${g.id}</strong><br><small class="muted">Court ${g.court}</small></td><td>${g.players.filter(p=>p.side==='a').map(p=>e(p.name)).join('<br>')}</td><td>${g.players.filter(p=>p.side==='b').map(p=>e(p.name)).join('<br>')}</td><td><span class="chip ${g.status==='completed'?'active':''}">${g.status==='completed'?`Team ${g.score_a>g.score_b?'1':'2'} won`:'Cancelled'}</span></td><td>${g.status!=='completed'||closed()?'—':swapConfirmation?.id===g.id?`<div class="swap-confirmation" role="group" aria-label="Swap winner for game ${g.id}"><span>Swap winner?</span>${button('Cancel',`data-swap-cancel="${g.id}"`)}${button('Swap',`data-swap-confirm="${g.id}"`,'btn-primary')}</div>`:button('Swap winner',`data-swap-winner="${g.id}"`)}</td></tr>`).join('')}</tbody></table></div>`:empty('The first result is still ahead',browserMode?'Start the session, then choose the winning team when a game finishes.':'Start an assigned game, then choose the winning team when it finishes.')}<div class="rating-note">${closed()?'Ratings were finalized as one session period. Closed sessions cannot be corrected.':browserMode?'Swap reverses the recorded winner and refreshes upcoming matches. Ratings update at session close.':'Swap reverses the recorded winner. Up Next teams stay reserved; use Rebuild separately to reconsider them. Ratings update at session close.'} Individual doubles ratings use an experimental Glicko-2 adaptation.</div></section>${standingsView()}</div>`;
+  return `<div class="results-layout"><section class="panel results-panel">${tableToolbar('Game results',`${state.metrics.completed_games} completed · cancelled games do not affect ratings`,false)}${games.length?`<div class="table-wrap"><table class="result-table"><thead><tr><th>Game</th><th>Team 1</th><th>Team 2</th><th>Result</th><th>Correction</th></tr></thead><tbody>${games.map(g=>`<tr data-result-row="${g.id}"><td><strong>#${g.id}</strong><br><small class="muted">Court ${g.court}</small></td><td>${g.players.filter(p=>p.side==='a').map(p=>e(p.name)).join('<br>')}</td><td>${g.players.filter(p=>p.side==='b').map(p=>e(p.name)).join('<br>')}</td><td><span class="chip ${g.status==='completed'?'active':''}">${g.status==='completed'?`Team ${g.score_a>g.score_b?'1':'2'} won`:'Cancelled'}</span>${substitutionHistory(g)}</td><td>${g.status!=='completed'||closed()?'—':swapConfirmation?.id===g.id?`<div class="swap-confirmation" role="group" aria-label="Swap winner for game ${g.id}"><span>Swap winner?</span>${button('Cancel',`data-swap-cancel="${g.id}"`)}${button('Swap',`data-swap-confirm="${g.id}"`,'btn-primary')}</div>`:button('Swap winner',`data-swap-winner="${g.id}"`)}</td></tr>`).join('')}</tbody></table></div>`:empty('The first result is still ahead',browserMode?'Start the session, then choose the winning team when a game finishes.':'Start an assigned game, then choose the winning team when it finishes.')}<div class="rating-note">${closed()?'Ratings were finalized as one session period. Closed sessions cannot be corrected.':browserMode?'Swap reverses the recorded winner and refreshes upcoming matches. Ratings update at session close.':'Swap reverses the recorded winner. Up Next teams stay reserved; use Rebuild separately to reconsider them. Ratings update at session close.'} Individual doubles ratings use an experimental Glicko-2 adaptation.</div></section>${standingsView()}</div>`;
 }
 
 function activityView() {
-  const labels = {'session.created':'Session created','roster.imported':'Roster imported','roster.reviewed_imported':'Reviewed players added','player.checkin':'Player checked in','players.checked_in_all':'Players checked in','players.paired':'Players paired','players.unpaired':'Pair preference removed','player.checkout':'Player checked out','player.pause':'Player took a break','player.resume':'Player rejoined the queue','player.eligibility':'Eligibility updated','courts.assigned':'Courts assigned','game.start':'Game started','game.complete':'Game result recorded','game.winner_swapped':'Recorded winner corrected','game.rebuilt':'Up Next rebuilt','game.cancelled':'Game cancelled','attendance.reconciled':'Absentees reconciled','session.closed':'Session closed; ratings finalized'};
+  const labels = {'session.created':'Session created','session.mode_changed':'Matching mode changed','roster.imported':'Roster imported','roster.reviewed_imported':'Reviewed players added','player.checkin':'Player checked in','players.checked_in_all':'Players checked in','players.paired':'Players paired','players.unpaired':'Pair preference removed','player.checkout':'Player checked out','player.pause':'Player took a break','player.resume':'Player rejoined the queue','player.eligibility':'Eligibility updated','courts.assigned':'Courts assigned','game.start':'Game started','game.complete':'Game result recorded','game.winner_swapped':'Recorded winner corrected','game.rebuilt':'Up Next rebuilt','game.substituted':'Player substituted','game.preview_released':'Up Next recalculated for substitution','game.cancelled':'Game cancelled','attendance.reconciled':'Absentees reconciled','session.closed':'Session closed; ratings finalized'};
   return `<section class="panel">${tableToolbar('Session activity','Changes are recorded locally. Recent 30 actions shown.',false)}<ul class="activity-list">${state.audit.map(a=>`<li><span>${e(labels[a.action]||a.action)}</span><time datetime="${new Date(a.created_at*1000).toISOString()}">${new Date(a.created_at*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})}</time></li>`).join('')}</ul></section><div class="helper-strip"><span>Reclub preview is read-only. Check-ins and game results stay in this local workspace.</span></div>`;
 }
 
@@ -544,6 +605,13 @@ function openDialog(id) {
     guideStep=-1;$('#guide-panel').hidden=true;
   }
   dialog.showModal();
+}
+
+function openModeDialog() {
+  $('#mode-picker').innerHTML=modeOrder.map(mode=>`<label class="mode-option ${state.session.mode===mode?'selected':''}"><input type="radio" name="mode" value="${mode}" ${state.session.mode===mode?'checked':''}><span><strong>${e(modeNames[mode])}${state.session.mode===mode?' <span class="mode-tag">Current</span>':''}</strong><small>${e(modeDescriptions[mode])}</small></span></label>`).join('');
+  $('#mode-dialog-current').textContent=`Current mode: ${modeNames[state.session.mode]}`;
+  openDialog('mode-dialog');
+  $('#mode-dialog input:checked')?.focus({preventScroll:true});
 }
 
 document.addEventListener('click', event=>{
@@ -639,6 +707,7 @@ document.addEventListener('click', event=>{
   if(target.dataset.swapConfirm) return mutate('game',{id_game:Number(target.dataset.swapConfirm),action:'swap_winner'});
   if(target.dataset.view) {navigate(state?.session.id,target.dataset.view);$('#workspace').focus({preventScroll:true});return;}
   if(target.dataset.open==='create-dialog'&&browserMode) return createSetupSession();
+  if(target.hasAttribute('data-change-mode')) return openModeDialog();
   if(target.dataset.courtStep) return mutate('configure',{court_count:state.session.court_count+Number(target.dataset.courtStep)});
   if(target.dataset.setupCheckin) {
     const id_rosters=target.dataset.setupCheckin==='all'?state.players.filter(player=>player.attendance!=='present').map(player=>player.id):[Number(target.dataset.setupCheckin)];
@@ -650,14 +719,35 @@ document.addEventListener('click', event=>{
   }
   if(target.dataset.open) return openDialog(target.dataset.open);
   if(target.dataset.action) return mutate(target.dataset.action);
+  if(target.dataset.editName) {
+    const player=state.players.find(player=>player.id===Number(target.dataset.editName));
+    const dialog=$('#rename-dialog');
+    dialog.dataset.player=player.id;
+    $('#player-name').value=player.name;
+    openDialog('rename-dialog');
+    $('#player-name').select();
+    return;
+  }
   if(target.dataset.player) return mutate('player',{id_roster:Number(target.dataset.player),action:target.dataset.playerAction});
   if(target.dataset.saveEligibility) {
     const fields=target.closest('[data-eligibility]');
     return mutate('player',{id_roster:Number(target.dataset.saveEligibility),action:'eligibility',membership:$('[data-membership]',fields).value,waiver:$('[data-waiver]',fields).value});
   }
+  if(target.dataset.gameOptions) {
+    const game=state.games.find(game=>game.id===Number(target.dataset.gameOptions));
+    $('#game-options-title').textContent=`Court ${game.court} options`;
+    $('#game-options-history').innerHTML=substitutionHistory(game);
+    $('#game-options-actions').innerHTML=button('Substitute player',`data-substitute="${game.id}"`,'btn-primary')+button('Cancel game',`data-cancel="${game.id}"`,'btn-danger');
+    return openDialog('game-options-dialog');
+  }
+  if(target.dataset.substitute) {
+    $('#game-options-dialog').close();
+    return openSubstitution(Number(target.dataset.substitute));
+  }
   if(target.dataset.game) return mutate('game',{id_game:Number(target.dataset.game),action:target.dataset.gameAction});
   if(target.dataset.winner) return mutate('game',{id_game:Number(target.dataset.winner),action:'complete',winner:target.dataset.side});
   if(target.dataset.cancel || target.dataset.confirm) {
+    $('#game-options-dialog').close();
     const isCancel=Boolean(target.dataset.cancel);
     confirmAction=isCancel?{action:'game',data:{id_game:Number(target.dataset.cancel),action:'cancel'}}:{action:target.dataset.confirm,data:{}};
     $('#cancel-reason-field').hidden=!isCancel;
@@ -785,6 +875,34 @@ $('#review-bulk-level').addEventListener('change',event=>{
     renderReview();
   }
   event.target.value='noop';
+});
+$('#substitute-form').addEventListener('change',updateSubstitutionSummary);
+$('#substitute-form').addEventListener('submit',event=>{
+  event.preventDefault();
+  const dialog=$('#substitute-dialog');
+  const id=Number(dialog.dataset.game);
+  mutate('game',{id_game:id,action:'substitute',revision:Number(dialog.dataset.revision),outgoing_id:Number($('#substitute-outgoing').value),incoming_id:Number($('#substitute-incoming').value),disposition:'break'},dialog).then(saved=>{
+    if(saved) $(`[data-game-options="${id}"]`)?.focus({preventScroll:true});
+  });
+});
+$('#mode-form').addEventListener('submit',event=>{
+  event.preventDefault();
+  const mode=new FormData(event.currentTarget).get('mode');
+  if(!mode)return;
+  if(mode===state.session.mode){$('#mode-dialog').close();return;}
+  mutate('configure',{mode},$('#mode-dialog'));
+});
+$('#mode-picker').addEventListener('change',event=>{
+  if(event.target.matches('input[name="mode"]')) {
+    $('#mode-picker').querySelectorAll('.mode-option').forEach(option=>option.classList.toggle('selected',option.contains(event.target)));
+  }
+});
+$('#rename-form').addEventListener('submit',event=>{
+  event.preventDefault();
+  const dialog=$('#rename-dialog');
+  mutate('player',{id_roster:Number(dialog.dataset.player),action:'rename',name:$('#player-name').value},dialog).then(saved=>{
+    if(saved) $(`[data-edit-name="${dialog.dataset.player}"]`)?.focus({preventScroll:true});
+  });
 });
 $('#confirm-form').addEventListener('submit',event=>{event.preventDefault();if(confirmAction)mutate(confirmAction.action,{...confirmAction.data,...(confirmAction.action==='game'?{reason:$('#cancel-reason').value.trim()||'Cancelled by organizer'}:{})},$('#confirm-dialog'));});
 window.addEventListener('popstate',()=>{searchTerm='';load(true);});

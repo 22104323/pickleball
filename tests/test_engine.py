@@ -129,6 +129,191 @@ class EngineTests(unittest.TestCase):
     def fill(self):
         return self.engine.fill_courts(self.id_session,self.revision())
 
+    def test_substitute_keeps_court_side_and_history_without_rating_partial_game(self):
+        self.import_players([1200]*5); self.check_all(); self.fill()
+        before=self.state(); game=before['games'][0]
+        outgoing=game['players'][0]; incoming=next(p for p in before['players'] if p['queue_state']=='waiting')
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'start')
+        counter=self.state()['session']['next_ticket']
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'substitute',{'outgoing_id':outgoing['id_roster'],'incoming_id':incoming['id'],'disposition':'break'})
+        state=self.state(); changed=state['games'][0]
+        departed=next(p for p in state['players'] if p['id']==outgoing['id_roster'])
+        self.assertEqual((departed['attendance'],departed['queue_state'],departed['ticket'],departed['queued_at']),('present','off',counter+1,None))
+        self.assertEqual((changed['id'],changed['court'],changed['status']),(game['id'],game['court'],'playing'))
+        self.assertFalse(changed['rating_eligible'])
+        self.assertEqual(next(p for p in changed['players'] if p['id_roster']==incoming['id'])['side'],outgoing['side'])
+        self.assertEqual(changed['substitutions'][0]['outgoing_name'],outgoing['name'])
+        with self.engine.connect() as db:
+            self.assertIsNone(db.execute('SELECT 1 FROM active_assignments WHERE id_roster=?',(outgoing['id_roster'],)).fetchone())
+            self.assertEqual(db.execute('SELECT id_game FROM active_assignments WHERE id_roster=?',(incoming['id'],)).fetchone()[0],game['id'])
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'complete',{'winner':'a'})
+        state=self.state()
+        self.assertTrue(all(p['games_played']==1 and p['wins']==0 and p['losses']==0 and p['last_outcome'] is None for p in state['players']))
+        self.assertEqual(next(p for p in state['players'] if p['id']==departed['id'])['queue_state'],'off')
+        with self.engine.connect() as db:
+            self.assertEqual(self.engine.histories(db,self.id_session),({},{}))
+        self.engine.close_session(self.id_session,self.revision())
+        self.assertTrue(all(p['rating']==1200 and p['rated_games']==0 for p in self.state()['players']))
+
+    def test_repeated_substitutions_count_each_participant_once(self):
+        self.import_players([1200]*5); self.check_all(); self.fill()
+        state=self.state(); game=state['games'][0]
+        original=game['players'][0]['id_roster']; replacement=next(p for p in state['players'] if p['queue_state']=='waiting')['id']
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'start')
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'substitute',{'outgoing_id':original,'incoming_id':replacement,'disposition':'break'})
+        self.engine.player_action(self.id_session,self.revision(),original,'resume')
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'substitute',{'outgoing_id':replacement,'incoming_id':original,'disposition':'break'})
+        returned_ticket=next(p for p in self.state()['players'] if p['id']==replacement)['ticket']
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'complete',{'winner':'b'})
+        state=self.state()
+        self.assertEqual(len(state['games'][0]['substitutions']),2)
+        self.assertTrue(all(p['games_played']==1 for p in state['players']))
+        checked_out=next(p for p in state['players'] if p['id']==replacement)
+        self.assertEqual((checked_out['attendance'],checked_out['queue_state'],checked_out['ticket']),('present','off',returned_ticket))
+
+    def test_substitute_from_reserved_up_next_releases_and_replans_it(self):
+        self.import_players([1200]*12); self.check_all(); self.fill()
+        state=self.state(); current,preview=state['games']
+        self.engine.game_action(self.id_session,self.revision(),current['id'],'start')
+        incoming=preview['players'][0]['id_roster']; outgoing=current['players'][0]['id_roster']
+        tickets={p['id']:p['ticket'] for p in state['players']}
+        self.engine.game_action(self.id_session,self.revision(),current['id'],'substitute',{'outgoing_id':outgoing,'incoming_id':incoming,'disposition':'break'})
+        state=self.state()
+        self.assertEqual(next(g for g in state['games'] if g['id']==preview['id'])['status'],'cancelled')
+        planned=next(g for g in state['games'] if g['status']=='assigned')
+        self.assertNotIn(incoming,[p['id_roster'] for p in planned['players']])
+        self.assertNotIn(outgoing,[p['id_roster'] for p in planned['players']])
+        self.assertTrue(all(p['ticket']==tickets[p['id']] for p in state['players'] if p['id']!=outgoing))
+
+    def test_substitute_before_start_keeps_normal_results_and_departing_priority(self):
+        self.import_players([1200]*5); self.check_all(); self.fill()
+        state=self.state(); game=state['games'][0]
+        outgoing=game['players'][0]['id_roster']; incoming=next(p for p in state['players'] if p['queue_state']=='waiting')['id']
+        ticket=next(p for p in state['players'] if p['id']==outgoing)['ticket']
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'substitute',{'outgoing_id':outgoing,'incoming_id':incoming,'disposition':'break'})
+        self.assertEqual(next(p for p in self.state()['players'] if p['id']==outgoing)['ticket'],ticket)
+        self.assertTrue(self.state()['games'][0]['rating_eligible'])
+        with self.assertRaises(Problem):
+            self.engine.game_action(self.id_session,self.revision(),game['id'],'rebuild')
+        self.assertEqual(len(self.state()['games'][0]['substitutions']),1)
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'start')
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'complete',{'winner':'a'})
+        self.engine.close_session(self.id_session,self.revision())
+        state=self.state()
+        self.assertEqual(next(p for p in state['players'] if p['id']==outgoing)['games_played'],0)
+        self.assertEqual(sum(p['rated_games'] for p in state['players']),4)
+        self.assertEqual(sum(p['wins'] for p in state['players']),2)
+        self.assertEqual(sum(p['losses'] for p in state['players']),2)
+
+    def test_invalid_and_stale_substitutions_roll_back(self):
+        self.import_players([1200]*6); self.check_all(); self.fill()
+        state=self.state(); game=state['games'][0]
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'start')
+        waiting=[p for p in self.state()['players'] if p['queue_state']=='waiting']
+        self.engine.player_action(self.id_session,self.revision(),waiting[0]['id'],'pause')
+        state=self.state(); outgoing=game['players'][0]['id_roster']
+        valid={'outgoing_id':outgoing,'incoming_id':waiting[1]['id'],'disposition':'break'}
+        for invalid in ({'disposition':'checkout'},{'incoming_id':waiting[0]['id']},{'incoming_id':game['players'][1]['id_roster']},{'incoming_id':outgoing},{'incoming_id':99999},{'outgoing_id':waiting[1]['id']},{'disposition':'swap'},{'incoming_id':True}):
+            with self.assertRaises(Problem):
+                self.engine.game_action(self.id_session,self.revision(),game['id'],'substitute',{**valid,**invalid})
+            self.assertEqual(self.state(),state)
+        with self.assertRaises(Problem):
+            self.engine.game_action(self.id_session,self.revision()-1,game['id'],'substitute',valid)
+        self.assertEqual(self.state(),state)
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'substitute',valid)
+        self.engine.game_action(self.id_session,self.revision(),game['id'],'cancel',{'reason':'Synthetic cancellation'})
+        self.assertTrue(all(p['games_played']==0 for p in self.state()['players']))
+        self.assertEqual(len(self.state()['games'][0]['substitutions']),1)
+        with self.assertRaises(Problem):
+            self.engine.game_action(self.id_session,self.revision(),game['id'],'substitute',valid)
+
+    def test_version_two_substitution_migration_preserves_existing_game(self):
+        self.import_players(); self.check_all(); self.fill()
+        before=self.state()
+        with self.engine.connect() as db:
+            db.execute('DROP TABLE game_substitutions')
+            db.execute('PRAGMA user_version=2')
+        migrated=Engine(self.engine.path,clock=lambda:self.now)
+        self.assertEqual(migrated.state(self.id_session),before)
+        with migrated.connect() as db:
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],3)
+
+    def test_rename_preserves_break_priority_and_game_identity(self):
+        self.import_players(); self.check_all()
+        player=self.state()['players'][0]
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'pause')
+        before=self.state()
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'rename',{'name':'  QA <Renamed> & Player  '})
+        after=self.state()
+        renamed=next(p for p in after['players'] if p['id']==player['id'])
+        self.assertEqual(renamed['name'],'QA <Renamed> & Player')
+        for key in ('id','id_member','ticket','queued_at','queue_state','games_played'):
+            self.assertEqual(renamed[key],before['players'][0][key])
+        self.assertEqual(after['session']['next_ticket'],before['session']['next_ticket'])
+        for name in (' ', 'x'*81):
+            with self.assertRaises(Problem):
+                self.engine.player_action(self.id_session,self.revision(),player['id'],'rename',{'name':name})
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'resume')
+        self.fill()
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'rename',{'name':'QA On court'})
+        state=self.state()
+        participant=next(gp for g in state['games'] for gp in g['players'] if gp['id_roster']==player['id'])
+        self.assertEqual(participant['name'],'QA On court')
+
+    def test_break_excludes_player_then_restores_priority_and_restarts_wait_clock(self):
+        self.import_players([1200]*8); self.check_all()
+        player=self.state()['players'][0]
+        ticket=player['ticket']
+        counter=self.state()['session']['next_ticket']
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'pause')
+        self.now+=600
+        self.fill()
+        paused=next(p for p in self.state()['players'] if p['id']==player['id'])
+        self.assertEqual((paused['queue_state'],paused['ticket'],paused['queued_at']),('off',ticket,None))
+        self.assertFalse(any(gp['id_roster']==player['id'] for g in self.state()['games'] for gp in g['players']))
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'resume')
+        resumed=next(p for p in self.state()['players'] if p['id']==player['id'])
+        self.assertEqual((resumed['ticket'],resumed['position'],resumed['wait_minutes']),(ticket,1,0))
+        self.assertEqual(self.state()['session']['next_ticket'],counter)
+        with self.assertRaises(Problem):
+            self.engine.player_action(self.id_session,self.revision(),player['id'],'resume')
+
+    def test_saving_valid_eligibility_does_not_end_a_break(self):
+        self.import_players(); self.check_all()
+        player=self.state()['players'][0]
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'pause')
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'eligibility',{'membership':'active','waiver':'valid'})
+        paused=next(p for p in self.state()['players'] if p['id']==player['id'])
+        self.assertEqual((paused['queue_state'],paused['ticket']),('off',player['ticket']))
+        with self.engine.connect() as db:
+            db.execute('UPDATE roster SET ticket=NULL WHERE id=?',(player['id'],))
+            db.commit()
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'eligibility',{'membership':'active','waiver':'valid'})
+        self.assertEqual(next(p for p in self.state()['players'] if p['id']==player['id'])['queue_state'],'off')
+
+    def test_checkout_during_break_discards_held_priority(self):
+        self.import_players(); self.check_all()
+        player=self.state()['players'][0]
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'pause')
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'checkout')
+        checked_out=next(p for p in self.state()['players'] if p['id']==player['id'])
+        self.assertIsNone(checked_out['ticket'])
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'checkin')
+        returned=next(p for p in self.state()['players'] if p['id']==player['id'])
+        self.assertGreater(returned['ticket'],player['ticket'])
+        self.assertEqual(returned['position'],4)
+
+    def test_lost_eligibility_during_break_discards_held_priority(self):
+        self.import_players(); self.check_all()
+        player=self.state()['players'][0]
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'pause')
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'eligibility',{'membership':'expired','waiver':'valid'})
+        self.assertIsNone(next(p for p in self.state()['players'] if p['id']==player['id'])['ticket'])
+        self.engine.player_action(self.id_session,self.revision(),player['id'],'eligibility',{'membership':'active','waiver':'valid'})
+        returned=next(p for p in self.state()['players'] if p['id']==player['id'])
+        self.assertGreater(returned['ticket'],player['ticket'])
+        self.assertEqual(returned['position'],4)
+
     def make_mode_session(self, mode, players, court_count=2):
         id_session=self.engine.create_session({'name':f'{mode} test','starts_at':self.now,
                                                'court_count':court_count,'max_players':40,'mode':mode})
@@ -376,6 +561,52 @@ class EngineTests(unittest.TestCase):
         next_match=self.engine.fill_courts(id_session,self.engine.state(id_session)['session']['revision'])
         self.assertEqual(len(next_match['assigned']),1)
 
+    def test_changing_mode_replans_up_next_and_preserves_live_games_and_queue_places(self):
+        self.import_players([1200]*12); self.check_all()
+        original=self.fill()['assigned']
+        self.assertEqual(len(original),2)
+        active_id, staged_id=original
+        self.engine.game_action(self.id_session,self.revision(),active_id,'start')
+        before=self.state()
+        active_before=next(game for game in before['games'] if game['id']==active_id)
+        tickets={player['id']:player['ticket'] for player in before['players']}
+        next_ticket=before['session']['next_ticket']
+
+        result=self.engine.configure_mode(self.id_session,self.revision(),'social_mix')
+        after=self.state()
+        active_after=next(game for game in after['games'] if game['id']==active_id)
+        staged_after=next(game for game in after['games'] if game['id']==staged_id)
+        self.assertEqual((active_after['status'],active_after['players']),
+                         (active_before['status'],active_before['players']))
+        self.assertEqual(staged_after['status'],'cancelled')
+        self.assertEqual(after['session']['mode'],'social_mix')
+        self.assertEqual(after['session']['next_ticket'],next_ticket)
+        self.assertEqual({player['id']:player['ticket'] for player in after['players']},tickets)
+        self.assertEqual(len(result['assigned']),1)
+        replacement=next(game for game in after['games'] if game['id']==result['assigned'][0])
+        self.assertEqual((replacement['status'],replacement['court']),('assigned',2))
+        self.assertTrue(replacement['reason'].startswith('Social Mix:'))
+
+    def test_incompatible_mode_change_releases_staged_players_without_losing_priority(self):
+        self.import_players([1800,1750,1200,1150]*2); self.check_all()
+        original=self.fill()['assigned']
+        active_id, staged_id=original
+        self.engine.game_action(self.id_session,self.revision(),active_id,'start')
+        before=self.state()
+        tickets={player['id']:player['ticket'] for player in before['players']}
+        next_ticket=before['session']['next_ticket']
+
+        result=self.engine.configure_mode(self.id_session,self.revision(),'mixed_doubles')
+        after=self.state()
+        self.assertEqual(result['assigned'],[])
+        self.assertTrue(result['messages'])
+        self.assertEqual(next(game for game in after['games'] if game['id']==active_id)['status'],'playing')
+        self.assertEqual(next(game for game in after['games'] if game['id']==staged_id)['status'],'cancelled')
+        self.assertEqual(after['session']['mode'],'mixed_doubles')
+        self.assertEqual(after['session']['next_ticket'],next_ticket)
+        self.assertEqual({player['id']:player['ticket'] for player in after['players']},tickets)
+        self.assertEqual(sum(player['queue_state']=='waiting' for player in after['players']),4)
+
     def test_skill_courts_assigns_distinct_skill_bands(self):
         players=[{'external_id':f'skill:{i}','name':f'Skill Player {i}','rating':rating,
                  'gender':None,'club_group':None}
@@ -418,7 +649,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(state['session']['mode'],'balanced')
         self.assertEqual(len(state['players']),4)
         with migrated.connect() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],2)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],3)
 
     def test_unverified_waivers_prevent_queue_but_not_presence(self):
         self.import_players(waiver='unknown')
@@ -612,6 +843,19 @@ class HTTPTests(unittest.TestCase):
         with urlopen(request) as response:
             self.assertEqual(response.status,201)
             self.assertEqual(json.load(response)['session']['name'],'API session')
+
+    def test_matching_mode_route_returns_updated_session(self):
+        request=Request(f'http://127.0.0.1:{self.port}/api/sessions',data=json.dumps({'name':'Mode API session'}).encode(),headers={'Content-Type':'application/json'})
+        with urlopen(request) as response:
+            state=json.load(response)
+        id_session=state['session']['id']
+        request=Request(f'http://127.0.0.1:{self.port}/api/sessions/{id_session}/configure',
+                        data=json.dumps({'revision':state['session']['revision'],'mode':'social_mix'}).encode(),
+                        headers={'Content-Type':'application/json'})
+        with urlopen(request) as response:
+            changed=json.load(response)
+        self.assertEqual(changed['session']['mode'],'social_mix')
+        self.assertIn('queue places are preserved',changed['notice'])
 
     def test_foreign_origin_cannot_mutate(self):
         request=Request(f'http://127.0.0.1:{self.port}/api/sessions',data=b'{"name":"Bad"}',headers={'Content-Type':'application/json','Origin':'https://other.example'})
